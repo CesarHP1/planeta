@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Earth</title>
+<style>
+  html, body {
+    margin: 0; padding: 0;
+    width: 100%; height: 100%;
+    background: #000005;
+    overflow: hidden;
+  }
+  canvas {
+    display: block;
+    position: absolute;
+    top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    cursor: grab;
+  }
+  canvas:active { cursor: grabbing; }
+  #stars {
+    z-index: 1;
+  }
+  #gl {
+    z-index: 2;
+  }
+  #fallback {
+    position: absolute; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: #8b949e; font-family: sans-serif; font-size: 14px; text-align: center;
+    z-index: 3;
+  }
+</style>
+</head>
+<body>
+<canvas id="stars"></canvas>
+<canvas id="gl"></canvas>
+<div id="fallback" style="display:none">Tu navegador no soporta WebGL.</div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════════════
+   EARTH — realistic procedural globe (WebGL)
+   Day/night terminator, city lights, clouds, atmosphere, starfield.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* ---------- tiny seeded RNG + value noise ---------- */
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function makeNoise2D(seed, gridSize) {
+  gridSize = gridSize || 48;
+  const rand = mulberry32(seed);
+  const grid = new Float32Array(gridSize * gridSize);
+  for (let i = 0; i < grid.length; i++) grid[i] = rand();
+  return function (x, y) {
+    x = ((x % 1) + 1) % 1; y = ((y % 1) + 1) % 1;
+    const gx = x * gridSize, gy = y * gridSize;
+    const x0 = Math.floor(gx) % gridSize, y0 = Math.floor(gy) % gridSize;
+    const x1 = (x0 + 1) % gridSize, y1 = (y0 + 1) % gridSize;
+    const fx = gx - Math.floor(gx), fy = gy - Math.floor(gy);
+    const v00 = grid[y0 * gridSize + x0], v10 = grid[y0 * gridSize + x1];
+    const v01 = grid[y1 * gridSize + x0], v11 = grid[y1 * gridSize + x1];
+    const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
+    const a = v00 + (v10 - v00) * sx;
+    const b = v01 + (v11 - v01) * sx;
+    return a + (b - a) * sy;
+  };
+}
+
+const noiseA = makeNoise2D(7, 40);
+const noiseB = makeNoise2D(91, 20);
+const noiseC = makeNoise2D(133, 80);
+function fbm(x, y) {
+  return noiseA(x, y) * 0.55 + noiseB(x * 2.3, y * 2.3) * 0.3 + noiseC(x * 5.1, y * 5.1) * 0.15;
+}
+
+const cloudNoiseA = makeNoise2D(501, 24);
+const cloudNoiseB = makeNoise2D(902, 60);
+function cloudFbm(x, y) {
+  return cloudNoiseA(x, y) * 0.65 + cloudNoiseB(x * 2.8, y * 2.8) * 0.35;
+}
+
+/* ---------- geographic data (simplified real coastlines) ---------- */
+const CONTINENTS = [
+  { pts: [[71,-156],[70,-141],[69,-128],[67,-113],[68,-100],[63,-90],[58,-78],[54,-58],[50,-56],[47,-52],[45,-64],[41,-70],[35,-75],[30,-81],[25,-80],[24,-97],[19,-97],[16,-92],[14,-91],[8,-83],[9,-78],[13,-83],[18,-88],[21,-87],[22,-97],[26,-97],[29,-94],[30,-89],[30,-82],[35,-76],[39,-75],[41,-72],[44,-67],[47,-60],[52,-56],[55,-60],[58,-63],[62,-75],[65,-85],[68,-90],[70,-100],[73,-115],[72,-140],[71,-156]] },
+  { pts: [[83,-35],[78,-20],[70,-22],[61,-45],[65,-53],[70,-55],[76,-68],[81,-65],[83,-35]] },
+  { pts: [[12,-72],[11,-66],[8,-60],[5,-52],[-1,-50],[-8,-35],[-14,-39],[-23,-43],[-30,-51],[-34,-58],[-38,-62],[-42,-65],[-50,-69],[-54,-68],[-52,-70],[-45,-73],[-38,-73],[-30,-71],[-20,-70],[-15,-76],[-10,-78],[-4,-81],[1,-80],[4,-77],[8,-77],[10,-75],[12,-72]] },
+  { pts: [[37,10],[33,20],[31,32],[27,34],[15,40],[11,51],[2,45],[-4,40],[-10,40],[-18,35],[-25,33],[-30,31],[-34,25],[-34,19],[-29,16],[-18,12],[-8,13],[0,9],[4,8],[5,-1],[10,-3],[14,-17],[21,-17],[28,-11],[32,-9],[35,-6],[37,10]] },
+  { pts: [[-12,49],[-15,50],[-20,47],[-25,45],[-23,43],[-16,44],[-12,49]] },
+  { pts: [[71,25],[68,20],[65,12],[63,8],[58,7],[55,8],[52,4],[50,1],[43,-9],[37,-9],[36,-6],[38,-1],[40,3],[38,8],[40,15],[38,17],[40,18],[45,13],[45,14],[43,16],[42,19],[38,20],[36,22],[38,24],[41,29],[45,29],[47,30],[48,28],[52,30],[55,38],[60,30],[65,25],[68,30],[71,25]] },
+  { pts: [[68,30],[70,60],[73,80],[75,100],[72,120],[70,150],[66,170],[60,163],[55,163],[52,155],[48,140],[42,133],[38,127],[35,127],[35,120],[30,122],[22,110],[10,109],[8,104],[6,116],[10,124],[15,120],[20,110],[15,100],[13,100],[20,93],[22,89],[20,86],[15,80],[8,77],[8,80],[15,73],[20,70],[24,68],[25,60],[30,50],[29,48],[27,51],[25,55],[24,52],[30,49],[33,36],[36,36],[37,35],[41,29],[47,30],[52,30],[55,38],[60,30],[65,25],[68,30]] },
+  { pts: [[-11,131],[-14,127],[-17,122],[-22,114],[-26,113],[-31,115],[-35,118],[-35,138],[-38,141],[-38,145],[-37,150],[-30,153],[-25,153],[-20,149],[-16,146],[-13,143],[-11,131]] },
+];
+
+const ISLANDS = [
+  // [lat, lon, radiusLat, radiusLon, rotation]
+  [36,138,7,3.2,0.3],[33,131,3,1.6,0.2],[41,140,3,1.8,-0.2],[43,144,2.4,2,0],   // Japan
+  [55,-3,4.2,2.6,0.4],[53,-8,2.6,1.6,0.3],                                      // UK / Ireland
+  [65,-19,2.2,3.4,0],                                                            // Iceland
+  [-39,175,3.4,1.6,0.6],[-44,170,3.8,1.3,0.5],                                   // New Zealand
+  [-6,107,2,4.5,0],[-8,113,1.4,2.6,0],[6,101,2,3.4,0.1],[13,122,4,2,0.4],[10,125,3,1.6,0.3], // Indonesia/Philippines
+  [22,-79,1.6,4.6,0],[19,-71,1.3,2.2,0.2],[18,-77,0.8,1.6,0],                    // Caribbean
+  [60,20,4,3,0.2],                                                                // Scandinavia bulge
+  [-20,57,0.6,0.6,0],                                                            // Mauritius-ish speck
+];
+
+/* city light anchors: [lat, lon, spread(deg), count, intensity] */
+const CITY_CLUSTERS = [
+  [40.7,-74.0,3.2,60,1.0],[34.0,-118.2,2.6,50,1.0],[41.9,-87.6,2,36,0.85],
+  [29.8,-95.4,2,30,0.8],[19.4,-99.1,2,34,0.85],[45.5,-73.6,1.6,20,0.7],
+  [51.5,-0.1,2.6,50,1.0],[48.85,2.35,2.2,42,0.95],[52.5,13.4,1.8,30,0.85],
+  [40.4,-3.7,1.8,26,0.8],[41.9,12.5,1.8,26,0.8],[52.3,4.9,1.6,24,0.8],
+  [30.0,31.2,2,40,0.95],[6.5,3.4,1.8,26,0.8],[-26.2,28.0,1.6,20,0.7],
+  [28.6,77.2,2.6,44,0.95],[19.0,72.8,2,34,0.9],[22.6,88.4,1.8,26,0.8],[12.9,77.6,1.6,22,0.75],
+  [39.9,116.4,2.4,42,0.95],[31.2,121.5,2.2,40,0.95],[23.1,113.3,2.2,38,0.9],
+  [35.7,139.7,2.8,50,1.0],[34.7,135.5,1.8,28,0.85],[37.5,127.0,2,30,0.9],
+  [-6.2,106.8,2.2,32,0.85],[13.7,100.5,1.8,26,0.8],[1.35,103.8,1,14,0.7],[14.6,121.0,1.8,26,0.8],
+  [-23.5,-46.6,2.2,34,0.9],[-22.9,-43.2,1.6,22,0.8],[-34.6,-58.4,1.8,24,0.8],
+  [-33.9,151.2,1.8,24,0.8],[-37.8,145.0,1.6,20,0.75],
+  [55.75,37.6,2,30,0.85],[59.9,30.3,1.4,18,0.7],
+];
+const CITY_CORRIDORS = [
+  // [lat1,lon1,lat2,lon2,width,count,intensity]
+  [42,-71,30,-81,1.6,60,0.75],   // US east coast
+  [37.7,-122.4,47.6,-122.3,1.2,26,0.6], // US west coast
+  [30.0,31.2,24,32.8,0.9,30,0.7],       // Nile
+  [28.6,77.2,22.6,88.4,1.2,34,0.7],     // Ganges plain
+  [50.9,4.4,52.4,13.4,1.0,20,0.65],     // Benelux-Germany
+];
+
+/* ---------- lat/lon -> canvas UV ---------- */
+function uvFromLatLon(lat, lon, w, h) {
+  return [(lon + 180) / 360 * w, (90 - lat) / 180 * h];
+}
+
+/* ---------- build the day (terrain+ocean) texture ---------- */
+function buildDayCanvas(w, h) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+
+  // ocean base — vertical climate gradient (works because v == latitude row)
+  const ocean = ctx.createLinearGradient(0, 0, 0, h);
+  ocean.addColorStop(0.00, '#dfeef2');
+  ocean.addColorStop(0.06, '#9fc3d8');
+  ocean.addColorStop(0.16, '#1c4f78');
+  ocean.addColorStop(0.30, '#0d3a63');
+  ocean.addColorStop(0.42, '#0f4d78');
+  ocean.addColorStop(0.50, '#0e5a82');
+  ocean.addColorStop(0.58, '#0f4d78');
+  ocean.addColorStop(0.70, '#0d3a63');
+  ocean.addColorStop(0.84, '#1c4f78');
+  ocean.addColorStop(0.94, '#9fc3d8');
+  ocean.addColorStop(1.00, '#dfeef2');
+  ctx.fillStyle = ocean;
+  ctx.fillRect(0, 0, w, h);
+
+  // land climate gradient (equator = rainforest, ~25° = desert, mid = temperate, poles = ice)
+  const land = ctx.createLinearGradient(0, 0, 0, h);
+  land.addColorStop(0.00, '#eef3f1');
+  land.addColorStop(0.06, '#cddccb');
+  land.addColorStop(0.14, '#5f7f57');
+  land.addColorStop(0.25, '#4c7a3f');
+  land.addColorStop(0.34, '#a9974f');
+  land.addColorStop(0.42, '#8a9a4c');
+  land.addColorStop(0.50, '#2e6b3e');
+  land.addColorStop(0.58, '#8a9a4c');
+  land.addColorStop(0.66, '#b39a52');
+  land.addColorStop(0.75, '#4c7a3f');
+  land.addColorStop(0.86, '#5f7f57');
+  land.addColorStop(0.94, '#cddccb');
+  land.addColorStop(1.00, '#eef3f1');
+
+  function jitter(points, seed) {
+    const rng = mulberry32(seed);
+    return points.map(([lat, lon]) => [lat + (rng() - 0.5) * 1.1, lon + (rng() - 0.5) * 1.1]);
+  }
+
+  function fillPolygon(pts) {
+    ctx.beginPath();
+    pts.forEach((p, i) => {
+      const [u, v] = uvFromLatLon(p[0], p[1], w, h);
+      i === 0 ? ctx.moveTo(u, v) : ctx.lineTo(u, v);
+    });
+    ctx.closePath();
+    ctx.fillStyle = land;
+    ctx.fill();
+  }
+
+  // Antarctica: full band near south pole
+  ctx.fillStyle = land;
+  ctx.fillRect(0, h * 0.945, w, h * 0.06);
+
+  CONTINENTS.forEach((c2, i) => fillPolygon(jitter(c2.pts, 1000 + i)));
+
+  ISLANDS.forEach(([lat, lon, rLat, rLon, rot]) => {
+    const [cu, cv] = uvFromLatLon(lat, lon, w, h);
+    const ru = rLon / 360 * w, rv = rLat / 180 * h;
+    ctx.save();
+    ctx.translate(cu, cv);
+    ctx.rotate(rot);
+    ctx.scale(ru, rv);
+    ctx.beginPath();
+    ctx.arc(0, 0, 1, 0, Math.PI * 2);
+    ctx.restore();
+    ctx.fillStyle = land;
+    ctx.fill();
+  });
+
+  // subtle elevation / terrain noise, multiplied over everything
+  const nW = 512, nH = 256;
+  const noiseCanvas = document.createElement('canvas'); noiseCanvas.width = nW; noiseCanvas.height = nH;
+  const nctx = noiseCanvas.getContext('2d');
+  const imgData = nctx.createImageData(nW, nH);
+  for (let y = 0; y < nH; y++) {
+    for (let x = 0; x < nW; x++) {
+      const v = fbm(x / nW * 4, y / nH * 4);
+      const g = Math.floor(150 + v * 130);
+      const idx = (y * nW + x) * 4;
+      imgData.data[idx] = g; imgData.data[idx + 1] = g; imgData.data[idx + 2] = g;
+      imgData.data[idx + 3] = 255;
+    }
+  }
+  nctx.putImageData(imgData, 0, 0);
+  ctx.globalCompositeOperation = 'multiply';
+  ctx.globalAlpha = 0.55;
+  ctx.drawImage(noiseCanvas, 0, 0, w, h);
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+
+  // fine ocean sparkle noise (very subtle)
+  ctx.globalCompositeOperation = 'overlay';
+  ctx.globalAlpha = 0.12;
+  ctx.drawImage(noiseCanvas, 0, 0, w, h);
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = 'source-over';
+
+  // polar ice sheen (extra whitening near poles over everything, incl. sea ice)
+  const iceGrad = ctx.createLinearGradient(0, 0, 0, h);
+  iceGrad.addColorStop(0.00, 'rgba(255,255,255,0.95)');
+  iceGrad.addColorStop(0.05, 'rgba(255,255,255,0.35)');
+  iceGrad.addColorStop(0.10, 'rgba(255,255,255,0.0)');
+  iceGrad.addColorStop(0.90, 'rgba(255,255,255,0.0)');
+  iceGrad.addColorStop(0.95, 'rgba(255,255,255,0.35)');
+  iceGrad.addColorStop(1.00, 'rgba(255,255,255,0.95)');
+  ctx.fillStyle = iceGrad;
+  ctx.fillRect(0, 0, w, h);
+
+  return c;
+}
+
+/* ---------- night lights texture (black bg + bright city clusters) ---------- */
+function buildNightCanvas(w, h) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  ctx.fillStyle = '#00040a';
+  ctx.fillRect(0, 0, w, h);
+
+  function dot(lat, lon, intensity) {
+    const [u, v] = uvFromLatLon(lat, lon, w, h);
+    const r = 1.4 + intensity * 1.6;
+    const g = ctx.createRadialGradient(u, v, 0, u, v, r);
+    g.addColorStop(0, `rgba(255,224,160,${0.85 * intensity})`);
+    g.addColorStop(1, 'rgba(255,224,160,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(u, v, r, 0, Math.PI * 2); ctx.fill();
+  }
+
+  const rng = mulberry32(4242);
+  CITY_CLUSTERS.forEach(([lat, lon, spread, count, intensity]) => {
+    for (let i = 0; i < count; i++) {
+      const a = rng() * Math.PI * 2;
+      const rr = Math.pow(rng(), 0.6) * spread;
+      dot(lat + Math.sin(a) * rr * 0.6, lon + Math.cos(a) * rr, intensity * (0.4 + rng() * 0.6));
+    }
+  });
+  CITY_CORRIDORS.forEach(([lat1, lon1, lat2, lon2, width, count, intensity]) => {
+    for (let i = 0; i < count; i++) {
+      const t = rng();
+      const lat = lat1 + (lat2 - lat1) * t + (rng() - 0.5) * width;
+      const lon = lon1 + (lon2 - lon1) * t + (rng() - 0.5) * width;
+      dot(lat, lon, intensity * (0.4 + rng() * 0.6));
+    }
+  });
+
+  return c;
+}
+
+/* ---------- cloud texture (soft alpha bands, climate-weighted) ---------- */
+function buildCloudCanvas(w, h) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  const img = ctx.createImageData(w, h);
+  for (let y = 0; y < h; y++) {
+    const lat = 90 - (y / h) * 180;
+    const latAbs = Math.abs(lat);
+    // more cloud near equator (ITCZ) and mid-latitude storm tracks, less at ~20-30deg and poles
+    const band = 0.55 * Math.exp(-Math.pow(latAbs / 9, 2)) +
+                 0.5 * Math.exp(-Math.pow((latAbs - 50) / 14, 2)) +
+                 0.12;
+    for (let x = 0; x < w; x++) {
+      const n = cloudFbm(x / w * 5, y / h * 5 + 7.3);
+      let a = (n - 0.42) * 2.2 * band;
+      a = Math.max(0, Math.min(1, a));
+      const idx = (y * w + x) * 4;
+      img.data[idx] = 255; img.data[idx + 1] = 255; img.data[idx + 2] = 255;
+      img.data[idx + 3] = Math.floor(a * 255);
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  return c;
+}
+
+/* ---------- sphere mesh ---------- */
+function buildSphere(latBands, lonBands, radius) {
+  const positions = [], normals = [], uvs = [], indices = [];
+  for (let lat = 0; lat <= latBands; lat++) {
+    const theta = lat * Math.PI / latBands;
+    const sinT = Math.sin(theta), cosT = Math.cos(theta);
+    for (let lon = 0; lon <= lonBands; lon++) {
+      const phi = lon * 2 * Math.PI / lonBands;
+      const sinP = Math.sin(phi), cosP = Math.cos(phi);
+      const x = cosP * sinT, y = cosT, z = sinP * sinT;
+      positions.push(radius * x, radius * y, radius * z);
+      normals.push(x, y, z);
+      uvs.push(1 - lon / lonBands, lat / latBands);
+    }
+  }
+  for (let lat = 0; lat < latBands; lat++) {
+    for (let lon = 0; lon < lonBands; lon++) {
+      const a = lat * (lonBands + 1) + lon;
+      const b = a + lonBands + 1;
+      indices.push(a, b, a + 1, b, b + 1, a + 1);
+    }
+  }
+  return { positions, normals, uvs, indices };
+}
+
+/* ---------- mat4 / vec3 helpers ---------- */
+const mat4 = {
+  identity() { return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]); },
+  multiply(a, b) {
+    const o = new Float32Array(16);
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+      o[i*4+j] = a[i*4+0]*b[0*4+j] + a[i*4+1]*b[1*4+j] + a[i*4+2]*b[2*4+j] + a[i*4+3]*b[3*4+j];
+    }
+    return o;
+  },
+  rotateY(rad) {
+    const c = Math.cos(rad), s = Math.sin(rad);
+    return new Float32Array([c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1]);
+  },
+  rotateX(rad) {
+    const c = Math.cos(rad), s = Math.sin(rad);
+    return new Float32Array([1,0,0,0, 0,c,s,0, 0,-s,c,0, 0,0,0,1]);
+  },
+  perspective(fovy, aspect, near, far) {
+    const f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
+    return new Float32Array([
+      f/aspect,0,0,0, 0,f,0,0, 0,0,(far+near)*nf,-1, 0,0,2*far*near*nf,0
+    ]);
+  },
+  lookAt(eye, center, up) {
+    function sub(a,b){return [a[0]-b[0],a[1]-b[1],a[2]-b[2]];}
+    function norm(a){const l=Math.hypot(a[0],a[1],a[2])||1;return [a[0]/l,a[1]/l,a[2]/l];}
+    function cross(a,b){return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];}
+    const zAxis = norm(sub(eye, center));
+    const xAxis = norm(cross(up, zAxis));
+    const yAxis = cross(zAxis, xAxis);
+    return new Float32Array([
+      xAxis[0], yAxis[0], zAxis[0], 0,
+      xAxis[1], yAxis[1], zAxis[1], 0,
+      xAxis[2], yAxis[2], zAxis[2], 0,
+      -(xAxis[0]*eye[0]+xAxis[1]*eye[1]+xAxis[2]*eye[2]),
+      -(yAxis[0]*eye[0]+yAxis[1]*eye[1]+yAxis[2]*eye[2]),
+      -(zAxis[0]*eye[0]+zAxis[1]*eye[1]+zAxis[2]*eye[2]), 1
+    ]);
+  }
+};
+
+/* ---------- shaders ---------- */
+const VERT_SRC = `
+attribute vec3 aPosition;
+attribute vec3 aNormal;
+attribute vec2 aUV;
+uniform mat4 uModel, uView, uProjection;
+uniform mat3 uNormalMatrix;
+varying vec3 vNormal;
+varying vec2 vUV;
+varying vec3 vWorldPos;
+void main() {
+  vec4 wp = uModel * vec4(aPosition, 1.0);
+  vWorldPos = wp.xyz;
+  vNormal = normalize(uNormalMatrix * aNormal);
+  vUV = aUV;
+  gl_Position = uProjection * uView * wp;
+}`;
+
+const FRAG_SRC = `
+precision highp float;
+varying vec3 vNormal;
+varying vec2 vUV;
+varying vec3 vWorldPos;
+uniform sampler2D uDayTex, uNightTex, uCloudTex;
+uniform vec3 uSunDir, uViewPos;
+void main() {
+  vec3 N = normalize(vNormal);
+  vec3 L = normalize(uSunDir);
+  float NdotL = dot(N, L);
+  float dayMix = smoothstep(-0.18, 0.15, NdotL);
+
+  vec3 dayColor = texture2D(uDayTex, vUV).rgb;
+  vec3 nightColor = texture2D(uNightTex, vUV).rgb;
+  float cloudAlpha = texture2D(uCloudTex, vUV).a;
+
+  float diffuse = max(NdotL, 0.0);
+  vec3 litDay = dayColor * (0.5 + 0.5 * diffuse);
+
+  vec3 surface = mix(nightColor, litDay, dayMix);
+  surface *= (1.0 - cloudAlpha * 0.2);
+
+  vec3 cloudLit = vec3(1.0) * (0.25 + 0.75 * dayMix);
+  surface = mix(surface, cloudLit, cloudAlpha * 0.8);
+
+  vec3 V = normalize(uViewPos - vWorldPos);
+  float oceanMask = smoothstep(0.02, 0.18, dayColor.b - max(dayColor.r, dayColor.g));
+  vec3 R = reflect(-L, N);
+  float spec = pow(max(dot(R, V), 0.0), 40.0) * oceanMask * diffuse;
+  surface += vec3(0.9, 0.95, 1.0) * spec * 0.6;
+
+  float fresnel = pow(1.0 - max(dot(N, V), 0.0), 2.2);
+  vec3 atmColor = mix(vec3(0.05,0.12,0.28), vec3(0.35,0.6,0.95), dayMix);
+  surface += atmColor * fresnel * (0.35 + 0.5 * dayMix);
+
+  gl_FragColor = vec4(surface, 1.0);
+}`;
+
+const ATM_VERT_SRC = `
+attribute vec3 aPosition;
+attribute vec3 aNormal;
+uniform mat4 uModel, uView, uProjection;
+uniform mat3 uNormalMatrix;
+varying vec3 vNormal;
+varying vec3 vWorldPos;
+void main() {
+  vec4 wp = uModel * vec4(aPosition, 1.0);
+  vWorldPos = wp.xyz;
+  vNormal = normalize(uNormalMatrix * aNormal);
+  gl_Position = uProjection * uView * wp;
+}`;
+
+const ATM_FRAG_SRC = `
+precision highp float;
+varying vec3 vNormal;
+varying vec3 vWorldPos;
+uniform vec3 uSunDir, uViewPos;
+void main() {
+  vec3 N = normalize(vNormal);
+  vec3 V = normalize(uViewPos - vWorldPos);
+  float NdotL = dot(N, normalize(uSunDir));
+  float dayMix = smoothstep(-0.3, 0.3, NdotL);
+  float fres = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+  vec3 atmColor = mix(vec3(0.04,0.09,0.22), vec3(0.35,0.6,1.0), dayMix);
+  gl_FragColor = vec4(atmColor * fres, fres * 0.85);
+}`;
+
+function compileShader(gl, src, type) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    console.error(gl.getShaderInfoLog(s));
+  }
+  return s;
+}
+function buildProgram(gl, vsrc, fsrc) {
+  const p = gl.createProgram();
+  gl.attachShader(p, compileShader(gl, vsrc, gl.VERTEX_SHADER));
+  gl.attachShader(p, compileShader(gl, fsrc, gl.FRAGMENT_SHADER));
+  gl.linkProgram(p);
+  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+    console.error(gl.getProgramInfoLog(p));
+  }
+  return p;
+}
+
+/* ---------- init ---------- */
+const glCanvas = document.getElementById('gl');
+const gl = glCanvas.getContext('webgl', { antialias: true, alpha: false }) ||
+           glCanvas.getContext('experimental-webgl');
+
+if (!gl) {
+  document.getElementById('fallback').style.display = 'flex';
+} else {
+  const TEX_W = 2048, TEX_H = 1024;
+  const dayCanvas = buildDayCanvas(TEX_W, TEX_H);
+  const nightCanvas = buildNightCanvas(TEX_W, TEX_H);
+  const cloudCanvas = buildCloudCanvas(1024, 512);
+
+  function makeTexture(source) {
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    return tex;
+  }
+
+  const dayTex = makeTexture(dayCanvas);
+  const nightTex = makeTexture(nightCanvas);
+  const cloudTex = makeTexture(cloudCanvas);
+
+  const sphere = buildSphere(64, 128, 1.0);
+  const atmSphere = buildSphere(48, 96, 1.03);
+
+  function makeBuffers(mesh) {
+    const posBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.positions), gl.STATIC_DRAW);
+    const normBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, normBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.normals), gl.STATIC_DRAW);
+    let uvBuf = null;
+    if (mesh.uvs) {
+      uvBuf = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, uvBuf);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.uvs), gl.STATIC_DRAW);
+    }
+    const idxBuf = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(mesh.indices), gl.STATIC_DRAW);
+    return { posBuf, normBuf, uvBuf, idxBuf, count: mesh.indices.length };
+  }
+
+  const earthBuf = makeBuffers(sphere);
+  const atmBuf = makeBuffers(atmSphere);
+
+  const earthProgram = buildProgram(gl, VERT_SRC, FRAG_SRC);
+  const atmProgram = buildProgram(gl, ATM_VERT_SRC, ATM_FRAG_SRC);
+
+  const eLoc = {
+    aPosition: gl.getAttribLocation(earthProgram, 'aPosition'),
+    aNormal: gl.getAttribLocation(earthProgram, 'aNormal'),
+    aUV: gl.getAttribLocation(earthProgram, 'aUV'),
+    uModel: gl.getUniformLocation(earthProgram, 'uModel'),
+    uView: gl.getUniformLocation(earthProgram, 'uView'),
+    uProjection: gl.getUniformLocation(earthProgram, 'uProjection'),
+    uNormalMatrix: gl.getUniformLocation(earthProgram, 'uNormalMatrix'),
+    uDayTex: gl.getUniformLocation(earthProgram, 'uDayTex'),
+    uNightTex: gl.getUniformLocation(earthProgram, 'uNightTex'),
+    uCloudTex: gl.getUniformLocation(earthProgram, 'uCloudTex'),
+    uSunDir: gl.getUniformLocation(earthProgram, 'uSunDir'),
+    uViewPos: gl.getUniformLocation(earthProgram, 'uViewPos'),
+  };
+  const aLoc = {
+    aPosition: gl.getAttribLocation(atmProgram, 'aPosition'),
+    aNormal: gl.getAttribLocation(atmProgram, 'aNormal'),
+    uModel: gl.getUniformLocation(atmProgram, 'uModel'),
+    uView: gl.getUniformLocation(atmProgram, 'uView'),
+    uProjection: gl.getUniformLocation(atmProgram, 'uProjection'),
+    uNormalMatrix: gl.getUniformLocation(atmProgram, 'uNormalMatrix'),
+    uSunDir: gl.getUniformLocation(atmProgram, 'uSunDir'),
+    uViewPos: gl.getUniformLocation(atmProgram, 'uViewPos'),
+  };
+
+  /* ---------- starfield (2D background canvas) ---------- */
+  const starsCanvas = document.getElementById('stars');
+  const sctx = starsCanvas.getContext('2d');
+  let stars = [];
+  function buildStars() {
+    stars = [];
+    const rng = mulberry32(99);
+    const count = Math.floor((window.innerWidth * window.innerHeight) / 1400);
+    for (let i = 0; i < count; i++) {
+      stars.push({
+        x: rng() * window.innerWidth,
+        y: rng() * window.innerHeight,
+        r: rng() * 1.3 + 0.2,
+        b: rng() * 0.6 + 0.3,
+        tw: rng() * Math.PI * 2,
+      });
+    }
+  }
+  function drawStars(t) {
+    sctx.clearRect(0, 0, starsCanvas.width, starsCanvas.height);
+    sctx.fillStyle = '#000005';
+    sctx.fillRect(0, 0, starsCanvas.width, starsCanvas.height);
+    stars.forEach(s => {
+      const flicker = 0.75 + 0.25 * Math.sin(t * 0.001 + s.tw);
+      sctx.fillStyle = `rgba(210,220,240,${s.b * flicker})`;
+      sctx.beginPath();
+      sctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      sctx.fill();
+    });
+  }
+
+  /* ---------- interaction ---------- */
+  let rotY = 0.6, rotX = 0.32;
+  let velY = 0.0009, velX = 0;
+  let dragging = false, lastX = 0, lastY = 0;
+
+  function pointerDown(x, y) { dragging = true; lastX = x; lastY = y; velY = 0; velX = 0; }
+  function pointerMove(x, y) {
+    if (!dragging) return;
+    const dx = x - lastX, dy = y - lastY;
+    rotY += dx * 0.005;
+    rotX += dy * 0.005;
+    rotX = Math.max(-1.35, Math.min(1.35, rotX));
+    velY = dx * 0.005;
+    velX = dy * 0.005;
+    lastX = x; lastY = y;
+  }
+  function pointerUp() { dragging = false; }
+
+  glCanvas.addEventListener('mousedown', e => pointerDown(e.clientX, e.clientY));
+  window.addEventListener('mousemove', e => pointerMove(e.clientX, e.clientY));
+  window.addEventListener('mouseup', pointerUp);
+  glCanvas.addEventListener('touchstart', e => { const t = e.touches[0]; pointerDown(t.clientX, t.clientY); }, { passive: true });
+  glCanvas.addEventListener('touchmove', e => { const t = e.touches[0]; pointerMove(t.clientX, t.clientY); }, { passive: true });
+  glCanvas.addEventListener('touchend', pointerUp);
+
+  /* ---------- resize ---------- */
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = window.innerWidth, h = window.innerHeight;
+    [glCanvas, starsCanvas].forEach(c => {
+      c.width = w * dpr; c.height = h * dpr;
+      c.style.width = w + 'px'; c.style.height = h + 'px';
+    });
+    gl.viewport(0, 0, glCanvas.width, glCanvas.height);
+    buildStars();
+  }
+  window.addEventListener('resize', resize);
+  resize();
+
+  /* ---------- render loop ---------- */
+  const sunDir = [0.85, 0.28, 0.4];
+  const eye = [0, 0, 3.3];
+
+  gl.enable(gl.DEPTH_TEST);
+  gl.clearColor(0.0, 0.0, 0.02, 1.0);
+
+  function normalMat3(m) {
+    // pure-rotation model matrix: top-left 3x3, row-major->col-major already consistent
+    return new Float32Array([m[0],m[1],m[2], m[4],m[5],m[6], m[8],m[9],m[10]]);
+  }
+
+  function frame(t) {
+    if (!dragging) {
+      rotY += velY * 0.985 + 0.0007;
+      rotX += velX * 0.94;
+      velX *= 0.94;
+      rotX = Math.max(-1.35, Math.min(1.35, rotX));
+    }
+
+    drawStars(t);
+
+    const aspect = glCanvas.width / glCanvas.height;
+    const halfAngle = 22.5 * Math.PI / 180; // desired half-angle margin on the constrained axis
+    const fovy = aspect >= 1 ? halfAngle * 2 : 2 * Math.atan(Math.tan(halfAngle) / aspect);
+    const proj = mat4.perspective(fovy, aspect, 0.1, 100);
+    const view = mat4.lookAt(eye, [0, 0, 0], [0, 1, 0]);
+    const model = mat4.multiply(mat4.rotateY(rotY), mat4.rotateX(rotX));
+    const nMat = normalMat3(model);
+
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    // earth
+    gl.useProgram(earthProgram);
+    gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
+    gl.disable(gl.BLEND);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, earthBuf.posBuf);
+    gl.vertexAttribPointer(eLoc.aPosition, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(eLoc.aPosition);
+    gl.bindBuffer(gl.ARRAY_BUFFER, earthBuf.normBuf);
+    gl.vertexAttribPointer(eLoc.aNormal, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(eLoc.aNormal);
+    gl.bindBuffer(gl.ARRAY_BUFFER, earthBuf.uvBuf);
+    gl.vertexAttribPointer(eLoc.aUV, 2, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(eLoc.aUV);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, earthBuf.idxBuf);
+
+    gl.uniformMatrix4fv(eLoc.uModel, false, model);
+    gl.uniformMatrix4fv(eLoc.uView, false, view);
+    gl.uniformMatrix4fv(eLoc.uProjection, false, proj);
+    gl.uniformMatrix3fv(eLoc.uNormalMatrix, false, nMat);
+    gl.uniform3fv(eLoc.uSunDir, sunDir);
+    gl.uniform3fv(eLoc.uViewPos, eye);
+
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, dayTex); gl.uniform1i(eLoc.uDayTex, 0);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, nightTex); gl.uniform1i(eLoc.uNightTex, 1);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, cloudTex); gl.uniform1i(eLoc.uCloudTex, 2);
+
+    gl.drawElements(gl.TRIANGLES, earthBuf.count, gl.UNSIGNED_SHORT, 0);
+
+    // atmosphere halo (backfaces, additive)
+    gl.useProgram(atmProgram);
+    gl.cullFace(gl.FRONT);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    gl.depthMask(false);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, atmBuf.posBuf);
+    gl.vertexAttribPointer(aLoc.aPosition, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(aLoc.aPosition);
+    gl.bindBuffer(gl.ARRAY_BUFFER, atmBuf.normBuf);
+    gl.vertexAttribPointer(aLoc.aNormal, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(aLoc.aNormal);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, atmBuf.idxBuf);
+
+    gl.uniformMatrix4fv(aLoc.uModel, false, model);
+    gl.uniformMatrix4fv(aLoc.uView, false, view);
+    gl.uniformMatrix4fv(aLoc.uProjection, false, proj);
+    gl.uniformMatrix3fv(aLoc.uNormalMatrix, false, nMat);
+    gl.uniform3fv(aLoc.uSunDir, sunDir);
+    gl.uniform3fv(aLoc.uViewPos, eye);
+
+    gl.drawElements(gl.TRIANGLES, atmBuf.count, gl.UNSIGNED_SHORT, 0);
+
+    gl.depthMask(true);
+    gl.cullFace(gl.BACK);
+
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+}
+</script>
+</body>
+</html>
