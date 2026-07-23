@@ -3,48 +3,115 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Earth</title>
+<title>Planeta Tierra - Rotación Realista</title>
 <style>
   html, body {
     margin: 0; padding: 0;
     width: 100%; height: 100%;
     background: #000005;
     overflow: hidden;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   }
   canvas {
     display: block;
     position: absolute;
     top: 0; left: 0;
     width: 100vw; height: 100vh;
-    cursor: grab;
   }
-  canvas:active { cursor: grabbing; }
-  #stars {
-    z-index: 1;
+  #stars { z-index: 1; }
+  #gl { z-index: 2; cursor: grab; }
+  #gl:active { cursor: grabbing; }
+
+  /* Panel HUD */
+  #hud {
+    position: absolute;
+    top: 20px; left: 20px;
+    z-index: 10;
+    background: rgba(10, 15, 30, 0.75);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    padding: 14px 18px;
+    border-radius: 10px;
+    color: #e0e6ed;
+    font-size: 13px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    pointer-events: auto;
+    user-select: none;
   }
-  #gl {
-    z-index: 2;
+  #hud h1 {
+    margin: 0 0 6px 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #fff;
+    letter-spacing: 0.5px;
   }
+  .info-row {
+    margin: 4px 0;
+    color: #a0aec0;
+  }
+  .info-val {
+    color: #63b3ed;
+    font-weight: bold;
+  }
+  .controls {
+    margin-top: 10px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .btn {
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.2);
+    color: #fff;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.2s;
+  }
+  .btn:hover { background: rgba(255,255,255,0.25); }
+  .btn.active { background: #3182ce; border-color: #63b3ed; }
+
   #fallback {
     position: absolute; inset: 0;
     display: flex; align-items: center; justify-content: center;
-    color: #8b949e; font-family: sans-serif; font-size: 14px; text-align: center;
-    z-index: 3;
+    color: #8b949e; font-size: 14px; text-align: center; z-index: 3;
   }
 </style>
 </head>
 <body>
+
 <canvas id="stars"></canvas>
 <canvas id="gl"></canvas>
+
+<div id="hud">
+  <h1>Tierra en Tiempo Real</h1>
+  <div class="info-row">Hora UTC: <span id="utc-time" class="info-val">00:00:00</span></div>
+  <div class="info-row">Velocidad: <span id="speed-val" class="info-val">1x (Real)</span></div>
+  <div class="info-row">Inclinación axial: <span class="info-val">23.44°</span></div>
+  <div class="controls">
+    <button class="btn active" onclick="setSpeed(1, this)">1x (Real)</button>
+    <button class="btn" onclick="setSpeed(100, this)">100x</button>
+    <button class="btn" onclick="setSpeed(1000, this)">1000x</button>
+  </div>
+</div>
+
 <div id="fallback" style="display:none">Tu navegador no soporta WebGL.</div>
 
 <script>
 /* ═══════════════════════════════════════════════════════════════════════
-   EARTH — realistic procedural globe (WebGL)
-   Day/night terminator, city lights, clouds, atmosphere, starfield.
+   TIERRA REALISTA CON CICLO DÍA/NOCHE Y ROTACIÓN DE 24 HORAS
    ═══════════════════════════════════════════════════════════════════════ */
 
-/* ---------- tiny seeded RNG + value noise ---------- */
+let speedMultiplier = 1;
+function setSpeed(mult, btn) {
+  speedMultiplier = mult;
+  document.querySelectorAll('.btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('speed-val').innerText = mult === 1 ? '1x (Real)' : mult + 'x';
+}
+
+/* Generador de Ruido Procedural */
 function mulberry32(seed) {
   let a = seed >>> 0;
   return function () {
@@ -55,8 +122,7 @@ function mulberry32(seed) {
   };
 }
 
-function makeNoise2D(seed, gridSize) {
-  gridSize = gridSize || 48;
+function makeNoise2D(seed, gridSize = 48) {
   const rand = mulberry32(seed);
   const grid = new Float32Array(gridSize * gridSize);
   for (let i = 0; i < grid.length; i++) grid[i] = rand();
@@ -69,121 +135,82 @@ function makeNoise2D(seed, gridSize) {
     const v00 = grid[y0 * gridSize + x0], v10 = grid[y0 * gridSize + x1];
     const v01 = grid[y1 * gridSize + x0], v11 = grid[y1 * gridSize + x1];
     const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy);
-    const a = v00 + (v10 - v00) * sx;
-    const b = v01 + (v11 - v01) * sx;
-    return a + (b - a) * sy;
+    return (v00 + (v10 - v00) * sx) * (1 - sy) + (v01 + (v11 - v01) * sx) * sy;
   };
 }
 
-const noiseA = makeNoise2D(7, 40);
-const noiseB = makeNoise2D(91, 20);
-const noiseC = makeNoise2D(133, 80);
-function fbm(x, y) {
-  return noiseA(x, y) * 0.55 + noiseB(x * 2.3, y * 2.3) * 0.3 + noiseC(x * 5.1, y * 5.1) * 0.15;
+const noiseA = makeNoise2D(12, 32);
+const noiseB = makeNoise2D(88, 64);
+function terrainNoise(x, y) {
+  return noiseA(x, y) * 0.7 + noiseB(x * 2.5, y * 2.5) * 0.3;
 }
 
-const cloudNoiseA = makeNoise2D(501, 24);
-const cloudNoiseB = makeNoise2D(902, 60);
-function cloudFbm(x, y) {
-  return cloudNoiseA(x, y) * 0.65 + cloudNoiseB(x * 2.8, y * 2.8) * 0.35;
-}
-
-/* ---------- geographic data (simplified real coastlines) ---------- */
+/* Polígonos Continentales Simplificados Mejorados */
 const CONTINENTS = [
-  { pts: [[71,-156],[70,-141],[69,-128],[67,-113],[68,-100],[63,-90],[58,-78],[54,-58],[50,-56],[47,-52],[45,-64],[41,-70],[35,-75],[30,-81],[25,-80],[24,-97],[19,-97],[16,-92],[14,-91],[8,-83],[9,-78],[13,-83],[18,-88],[21,-87],[22,-97],[26,-97],[29,-94],[30,-89],[30,-82],[35,-76],[39,-75],[41,-72],[44,-67],[47,-60],[52,-56],[55,-60],[58,-63],[62,-75],[65,-85],[68,-90],[70,-100],[73,-115],[72,-140],[71,-156]] },
-  { pts: [[83,-35],[78,-20],[70,-22],[61,-45],[65,-53],[70,-55],[76,-68],[81,-65],[83,-35]] },
-  { pts: [[12,-72],[11,-66],[8,-60],[5,-52],[-1,-50],[-8,-35],[-14,-39],[-23,-43],[-30,-51],[-34,-58],[-38,-62],[-42,-65],[-50,-69],[-54,-68],[-52,-70],[-45,-73],[-38,-73],[-30,-71],[-20,-70],[-15,-76],[-10,-78],[-4,-81],[1,-80],[4,-77],[8,-77],[10,-75],[12,-72]] },
-  { pts: [[37,10],[33,20],[31,32],[27,34],[15,40],[11,51],[2,45],[-4,40],[-10,40],[-18,35],[-25,33],[-30,31],[-34,25],[-34,19],[-29,16],[-18,12],[-8,13],[0,9],[4,8],[5,-1],[10,-3],[14,-17],[21,-17],[28,-11],[32,-9],[35,-6],[37,10]] },
-  { pts: [[-12,49],[-15,50],[-20,47],[-25,45],[-23,43],[-16,44],[-12,49]] },
-  { pts: [[71,25],[68,20],[65,12],[63,8],[58,7],[55,8],[52,4],[50,1],[43,-9],[37,-9],[36,-6],[38,-1],[40,3],[38,8],[40,15],[38,17],[40,18],[45,13],[45,14],[43,16],[42,19],[38,20],[36,22],[38,24],[41,29],[45,29],[47,30],[48,28],[52,30],[55,38],[60,30],[65,25],[68,30],[71,25]] },
-  { pts: [[68,30],[70,60],[73,80],[75,100],[72,120],[70,150],[66,170],[60,163],[55,163],[52,155],[48,140],[42,133],[38,127],[35,127],[35,120],[30,122],[22,110],[10,109],[8,104],[6,116],[10,124],[15,120],[20,110],[15,100],[13,100],[20,93],[22,89],[20,86],[15,80],[8,77],[8,80],[15,73],[20,70],[24,68],[25,60],[30,50],[29,48],[27,51],[25,55],[24,52],[30,49],[33,36],[36,36],[37,35],[41,29],[47,30],[52,30],[55,38],[60,30],[65,25],[68,30]] },
-  { pts: [[-11,131],[-14,127],[-17,122],[-22,114],[-26,113],[-31,115],[-35,118],[-35,138],[-38,141],[-38,145],[-37,150],[-30,153],[-25,153],[-20,149],[-16,146],[-13,143],[-11,131]] },
+  // América del Norte
+  { pts: [[71,-156],[70,-141],[60,-135],[53,-130],[48,-124],[38,-123],[32,-117],[30,-110],[23,-110],[16,-93],[15,-88],[9,-79],[13,-87],[18,-96],[25,-97],[28,-96],[29,-89],[25,-80],[30,-81],[35,-75],[42,-70],[44,-66],[52,-55],[60,-64],[68,-66],[72,-80],[76,-100],[73,-120],[71,-156]] },
+  // Groenlandia
+  { pts: [[83,-35],[78,-18],[70,-22],[60,-44],[65,-52],[76,-68],[82,-60],[83,-35]] },
+  // América del Sur
+  { pts: [[12,-73],[10,-62],[8,-50],[-2,-40],[-7,-34],[-15,-38],[-23,-42],[-33,-51],[-42,-63],[-53,-68],[-55,-71],[-46,-75],[-33,-72],[-18,-71],[-14,-76],[-5,-81],[2,-78],[9,-76],[12,-73]] },
+  // África
+  { pts: [[37,10],[36,0],[32,-9],[28,-13],[21,-17],[15,-17],[11,-14],[5,-3],[-1,9],[-12,13],[-22,14],[-33,18],[-34,26],[-26,33],[-11,41],[11,51],[12,44],[15,41],[27,34],[31,32],[33,20],[37,10]] },
+  // Eurasia
+  { pts: [[71,28],[62,6],[50,-5],[43,-9],[36,-5],[36,3],[40,14],[38,22],[41,29],[36,36],[22,37],[13,44],[12,51],[25,57],[24,68],[15,73],[8,77],[15,80],[22,88],[15,100],[2,102],[6,108],[10,109],[21,108],[22,114],[30,122],[38,118],[39,127],[48,140],[58,162],[66,170],[70,180],[76,140],[73,100],[70,60],[71,28]] },
+  // Australia
+  { pts: [[-12,131],[-15,124],[-22,114],[-32,115],[-35,118],[-35,138],[-38,145],[-31,153],[-20,149],[-14,143],[-11,131]] },
+  // Antártida
+  { pts: [[-65,-180],[-65,-120],[-68,-60],[-72,0],[-67,60],[-66,120],[-65,180],[-88,180],[-88,-180]] }
 ];
 
 const ISLANDS = [
-  // [lat, lon, radiusLat, radiusLon, rotation]
-  [36,138,7,3.2,0.3],[33,131,3,1.6,0.2],[41,140,3,1.8,-0.2],[43,144,2.4,2,0],   // Japan
-  [55,-3,4.2,2.6,0.4],[53,-8,2.6,1.6,0.3],                                      // UK / Ireland
-  [65,-19,2.2,3.4,0],                                                            // Iceland
-  [-39,175,3.4,1.6,0.6],[-44,170,3.8,1.3,0.5],                                   // New Zealand
-  [-6,107,2,4.5,0],[-8,113,1.4,2.6,0],[6,101,2,3.4,0.1],[13,122,4,2,0.4],[10,125,3,1.6,0.3], // Indonesia/Philippines
-  [22,-79,1.6,4.6,0],[19,-71,1.3,2.2,0.2],[18,-77,0.8,1.6,0],                    // Caribbean
-  [60,20,4,3,0.2],                                                                // Scandinavia bulge
-  [-20,57,0.6,0.6,0],                                                            // Mauritius-ish speck
+  [36,138,7,3,0.3],[42,142,4,2,0],                      // Japón
+  [55,-3,4.5,2.5,0.4],[53,-8,2.8,1.5,0.3],               // Reino Unido / Irlanda
+  [-19,46,6,2.5,-0.2],                                  // Madagascar
+  [-39,175,3.5,1.5,0.6],[-44,170,4,1.3,0.5],             // Nueva Zelanda
+  [12,123,4.5,2,0.4],                                   // Filipinas
+  [-3,114,5,4,0],                                       // Borneo / Indonesia
+  [22,-79,1.5,4.5,-0.1]                                 // Cuba
 ];
 
-/* city light anchors: [lat, lon, spread(deg), count, intensity] */
-const CITY_CLUSTERS = [
-  [40.7,-74.0,3.2,60,1.0],[34.0,-118.2,2.6,50,1.0],[41.9,-87.6,2,36,0.85],
-  [29.8,-95.4,2,30,0.8],[19.4,-99.1,2,34,0.85],[45.5,-73.6,1.6,20,0.7],
-  [51.5,-0.1,2.6,50,1.0],[48.85,2.35,2.2,42,0.95],[52.5,13.4,1.8,30,0.85],
-  [40.4,-3.7,1.8,26,0.8],[41.9,12.5,1.8,26,0.8],[52.3,4.9,1.6,24,0.8],
-  [30.0,31.2,2,40,0.95],[6.5,3.4,1.8,26,0.8],[-26.2,28.0,1.6,20,0.7],
-  [28.6,77.2,2.6,44,0.95],[19.0,72.8,2,34,0.9],[22.6,88.4,1.8,26,0.8],[12.9,77.6,1.6,22,0.75],
-  [39.9,116.4,2.4,42,0.95],[31.2,121.5,2.2,40,0.95],[23.1,113.3,2.2,38,0.9],
-  [35.7,139.7,2.8,50,1.0],[34.7,135.5,1.8,28,0.85],[37.5,127.0,2,30,0.9],
-  [-6.2,106.8,2.2,32,0.85],[13.7,100.5,1.8,26,0.8],[1.35,103.8,1,14,0.7],[14.6,121.0,1.8,26,0.8],
-  [-23.5,-46.6,2.2,34,0.9],[-22.9,-43.2,1.6,22,0.8],[-34.6,-58.4,1.8,24,0.8],
-  [-33.9,151.2,1.8,24,0.8],[-37.8,145.0,1.6,20,0.75],
-  [55.75,37.6,2,30,0.85],[59.9,30.3,1.4,18,0.7],
-];
-const CITY_CORRIDORS = [
-  // [lat1,lon1,lat2,lon2,width,count,intensity]
-  [42,-71,30,-81,1.6,60,0.75],   // US east coast
-  [37.7,-122.4,47.6,-122.3,1.2,26,0.6], // US west coast
-  [30.0,31.2,24,32.8,0.9,30,0.7],       // Nile
-  [28.6,77.2,22.6,88.4,1.2,34,0.7],     // Ganges plain
-  [50.9,4.4,52.4,13.4,1.0,20,0.65],     // Benelux-Germany
+const CITIES = [
+  [40.7,-74.0],[34.0,-118.2],[41.9,-87.6],[19.4,-99.1],[-23.5,-46.6],[-34.6,-58.4],
+  [51.5,-0.1],[48.8,2.3],[52.5,13.4],[40.4,-3.7],[55.7,37.6],[30.0,31.2],
+  [28.6,77.2],[19.0,72.8],[39.9,116.4],[31.2,121.5],[35.7,139.7],[37.5,127.0],
+  [-1.3,36.8],[-26.2,28.0],[-33.9,151.2],[1.3,103.8]
 ];
 
-/* ---------- lat/lon -> canvas UV ---------- */
 function uvFromLatLon(lat, lon, w, h) {
   return [(lon + 180) / 360 * w, (90 - lat) / 180 * h];
 }
 
-/* ---------- build the day (terrain+ocean) texture ---------- */
+/* Textura del Mapa Diurno (Tierra) */
 function buildDayCanvas(w, h) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const ctx = c.getContext('2d');
 
-  // ocean base — vertical climate gradient (works because v == latitude row)
+  // Gradiente Oceánico Profundo
   const ocean = ctx.createLinearGradient(0, 0, 0, h);
-  ocean.addColorStop(0.00, '#dfeef2');
-  ocean.addColorStop(0.06, '#9fc3d8');
-  ocean.addColorStop(0.16, '#1c4f78');
-  ocean.addColorStop(0.30, '#0d3a63');
-  ocean.addColorStop(0.42, '#0f4d78');
-  ocean.addColorStop(0.50, '#0e5a82');
-  ocean.addColorStop(0.58, '#0f4d78');
-  ocean.addColorStop(0.70, '#0d3a63');
-  ocean.addColorStop(0.84, '#1c4f78');
-  ocean.addColorStop(0.94, '#9fc3d8');
-  ocean.addColorStop(1.00, '#dfeef2');
+  ocean.addColorStop(0.0, '#bfe3ed');
+  ocean.addColorStop(0.1, '#1b4d75');
+  ocean.addColorStop(0.5, '#092543');
+  ocean.addColorStop(0.9, '#1b4d75');
+  ocean.addColorStop(1.0, '#bfe3ed');
   ctx.fillStyle = ocean;
   ctx.fillRect(0, 0, w, h);
 
-  // land climate gradient (equator = rainforest, ~25° = desert, mid = temperate, poles = ice)
+  // Terreno Base (Biomas por Latitud)
   const land = ctx.createLinearGradient(0, 0, 0, h);
-  land.addColorStop(0.00, '#eef3f1');
-  land.addColorStop(0.06, '#cddccb');
-  land.addColorStop(0.14, '#5f7f57');
-  land.addColorStop(0.25, '#4c7a3f');
-  land.addColorStop(0.34, '#a9974f');
-  land.addColorStop(0.42, '#8a9a4c');
-  land.addColorStop(0.50, '#2e6b3e');
-  land.addColorStop(0.58, '#8a9a4c');
-  land.addColorStop(0.66, '#b39a52');
-  land.addColorStop(0.75, '#4c7a3f');
-  land.addColorStop(0.86, '#5f7f57');
-  land.addColorStop(0.94, '#cddccb');
-  land.addColorStop(1.00, '#eef3f1');
+  land.addColorStop(0.00, '#eef5f2'); // Polo Norte
+  land.addColorStop(0.12, '#5a7a52'); // Tundra / Bosque
+  land.addColorStop(0.25, '#3e6b35'); // Templado
+  land.addColorStop(0.36, '#9c8d52'); // Desiertos del Norte (Sahara/Gobi)
+  land.addColorStop(0.50, '#2d5e2d'); // Ecuador / Selva
+  land.addColorStop(0.68, '#8c7d42'); // Desiertos del Sur
+  land.addColorStop(0.82, '#486e38'); // Templado Sur
+  land.addColorStop(1.00, '#ffffff'); // Antártida
 
-  function jitter(points, seed) {
-    const rng = mulberry32(seed);
-    return points.map(([lat, lon]) => [lat + (rng() - 0.5) * 1.1, lon + (rng() - 0.5) * 1.1]);
-  }
-
-  function fillPolygon(pts) {
+  function drawPoly(pts) {
     ctx.beginPath();
     pts.forEach((p, i) => {
       const [u, v] = uvFromLatLon(p[0], p[1], w, h);
@@ -194,131 +221,87 @@ function buildDayCanvas(w, h) {
     ctx.fill();
   }
 
-  // Antarctica: full band near south pole
-  ctx.fillStyle = land;
-  ctx.fillRect(0, h * 0.945, w, h * 0.06);
-
-  CONTINENTS.forEach((c2, i) => fillPolygon(jitter(c2.pts, 1000 + i)));
+  CONTINENTS.forEach(c2 => drawPoly(c2.pts));
 
   ISLANDS.forEach(([lat, lon, rLat, rLon, rot]) => {
     const [cu, cv] = uvFromLatLon(lat, lon, w, h);
-    const ru = rLon / 360 * w, rv = rLat / 180 * h;
     ctx.save();
     ctx.translate(cu, cv);
     ctx.rotate(rot);
-    ctx.scale(ru, rv);
-    ctx.beginPath();
-    ctx.arc(0, 0, 1, 0, Math.PI * 2);
+    ctx.scale((rLon / 360) * w, (rLat / 180) * h);
+    ctx.beginPath(); ctx.arc(0, 0, 1, 0, Math.PI * 2);
     ctx.restore();
-    ctx.fillStyle = land;
-    ctx.fill();
+    ctx.fillStyle = land; ctx.fill();
   });
 
-  // subtle elevation / terrain noise, multiplied over everything
-  const nW = 512, nH = 256;
-  const noiseCanvas = document.createElement('canvas'); noiseCanvas.width = nW; noiseCanvas.height = nH;
-  const nctx = noiseCanvas.getContext('2d');
-  const imgData = nctx.createImageData(nW, nH);
-  for (let y = 0; y < nH; y++) {
-    for (let x = 0; x < nW; x++) {
-      const v = fbm(x / nW * 4, y / nH * 4);
-      const g = Math.floor(150 + v * 130);
-      const idx = (y * nW + x) * 4;
-      imgData.data[idx] = g; imgData.data[idx + 1] = g; imgData.data[idx + 2] = g;
-      imgData.data[idx + 3] = 255;
+  // Detalle de Releve / Montañas
+  const imgData = ctx.getImageData(0, 0, w, h);
+  const data = imgData.data;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const idx = (y * w + x) * 4;
+      const isLand = data[idx+1] > data[idx+2]; // Verde > Azul = Tierra
+      if (isLand) {
+        const n = terrainNoise(x / w * 8, y / h * 8);
+        data[idx]     = Math.min(255, data[idx] * (0.7 + n * 0.5));
+        data[idx + 1] = Math.min(255, data[idx + 1] * (0.7 + n * 0.5));
+        data[idx + 2] = Math.min(255, data[idx + 2] * (0.7 + n * 0.5));
+      }
     }
   }
-  nctx.putImageData(imgData, 0, 0);
-  ctx.globalCompositeOperation = 'multiply';
-  ctx.globalAlpha = 0.55;
-  ctx.drawImage(noiseCanvas, 0, 0, w, h);
-  ctx.globalAlpha = 1;
-  ctx.globalCompositeOperation = 'source-over';
-
-  // fine ocean sparkle noise (very subtle)
-  ctx.globalCompositeOperation = 'overlay';
-  ctx.globalAlpha = 0.12;
-  ctx.drawImage(noiseCanvas, 0, 0, w, h);
-  ctx.globalAlpha = 1;
-  ctx.globalCompositeOperation = 'source-over';
-
-  // polar ice sheen (extra whitening near poles over everything, incl. sea ice)
-  const iceGrad = ctx.createLinearGradient(0, 0, 0, h);
-  iceGrad.addColorStop(0.00, 'rgba(255,255,255,0.95)');
-  iceGrad.addColorStop(0.05, 'rgba(255,255,255,0.35)');
-  iceGrad.addColorStop(0.10, 'rgba(255,255,255,0.0)');
-  iceGrad.addColorStop(0.90, 'rgba(255,255,255,0.0)');
-  iceGrad.addColorStop(0.95, 'rgba(255,255,255,0.35)');
-  iceGrad.addColorStop(1.00, 'rgba(255,255,255,0.95)');
-  ctx.fillStyle = iceGrad;
-  ctx.fillRect(0, 0, w, h);
-
+  ctx.putImageData(imgData, 0, 0);
   return c;
 }
 
-/* ---------- night lights texture (black bg + bright city clusters) ---------- */
+/* Textura del Mapa Nocturno (Luces de Ciudades) */
 function buildNightCanvas(w, h) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#00040a';
+  ctx.fillStyle = '#010408';
   ctx.fillRect(0, 0, w, h);
 
-  function dot(lat, lon, intensity) {
-    const [u, v] = uvFromLatLon(lat, lon, w, h);
-    const r = 1.4 + intensity * 1.6;
-    const g = ctx.createRadialGradient(u, v, 0, u, v, r);
-    g.addColorStop(0, `rgba(255,224,160,${0.85 * intensity})`);
-    g.addColorStop(1, 'rgba(255,224,160,0)');
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(u, v, r, 0, Math.PI * 2); ctx.fill();
-  }
-
-  const rng = mulberry32(4242);
-  CITY_CLUSTERS.forEach(([lat, lon, spread, count, intensity]) => {
-    for (let i = 0; i < count; i++) {
-      const a = rng() * Math.PI * 2;
-      const rr = Math.pow(rng(), 0.6) * spread;
-      dot(lat + Math.sin(a) * rr * 0.6, lon + Math.cos(a) * rr, intensity * (0.4 + rng() * 0.6));
+  const rand = mulberry32(777);
+  CITIES.forEach(([lat, lon]) => {
+    for (let i = 0; i < 40; i++) {
+      const rLat = lat + (rand() - 0.5) * 3;
+      const rLon = lon + (rand() - 0.5) * 4;
+      const [u, v] = uvFromLatLon(rLat, rLon, w, h);
+      const rad = 1 + rand() * 2;
+      const g = ctx.createRadialGradient(u, v, 0, u, v, rad);
+      g.addColorStop(0, 'rgba(255,210,120,0.9)');
+      g.addColorStop(1, 'rgba(255,160,40,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath(); ctx.arc(u, v, rad, 0, Math.PI * 2); ctx.fill();
     }
   });
-  CITY_CORRIDORS.forEach(([lat1, lon1, lat2, lon2, width, count, intensity]) => {
-    for (let i = 0; i < count; i++) {
-      const t = rng();
-      const lat = lat1 + (lat2 - lat1) * t + (rng() - 0.5) * width;
-      const lon = lon1 + (lon2 - lon1) * t + (rng() - 0.5) * width;
-      dot(lat, lon, intensity * (0.4 + rng() * 0.6));
-    }
-  });
-
   return c;
 }
 
-/* ---------- cloud texture (soft alpha bands, climate-weighted) ---------- */
+/* Textura de Nubes */
 function buildCloudCanvas(w, h) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const ctx = c.getContext('2d');
   const img = ctx.createImageData(w, h);
+  const cloudNoise = makeNoise2D(99, 32);
+
   for (let y = 0; y < h; y++) {
     const lat = 90 - (y / h) * 180;
-    const latAbs = Math.abs(lat);
-    // more cloud near equator (ITCZ) and mid-latitude storm tracks, less at ~20-30deg and poles
-    const band = 0.55 * Math.exp(-Math.pow(latAbs / 9, 2)) +
-                 0.5 * Math.exp(-Math.pow((latAbs - 50) / 14, 2)) +
-                 0.12;
+    const band = Math.sin((lat * Math.PI) / 180);
+    const density = Math.exp(-band * band * 2) * 0.5 + 0.3; // Más nubes en ecuador y latitudes medias
+
     for (let x = 0; x < w; x++) {
-      const n = cloudFbm(x / w * 5, y / h * 5 + 7.3);
-      let a = (n - 0.42) * 2.2 * band;
-      a = Math.max(0, Math.min(1, a));
+      const n = cloudNoise(x / w * 6, y / h * 6);
+      let val = Math.max(0, (n - 0.4) * 2.5 * density);
       const idx = (y * w + x) * 4;
-      img.data[idx] = 255; img.data[idx + 1] = 255; img.data[idx + 2] = 255;
-      img.data[idx + 3] = Math.floor(a * 255);
+      img.data[idx] = 255; img.data[idx+1] = 255; img.data[idx+2] = 255;
+      img.data[idx+3] = Math.floor(val * 220);
     }
   }
   ctx.putImageData(img, 0, 0);
   return c;
 }
 
-/* ---------- sphere mesh ---------- */
+/* Geometría Esférica WebGL */
 function buildSphere(latBands, lonBands, radius) {
   const positions = [], normals = [], uvs = [], indices = [];
   for (let lat = 0; lat <= latBands; lat++) {
@@ -343,7 +326,7 @@ function buildSphere(latBands, lonBands, radius) {
   return { positions, normals, uvs, indices };
 }
 
-/* ---------- mat4 / vec3 helpers ---------- */
+/* Funciones de Matrices 3D */
 const mat4 = {
   identity() { return new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]); },
   multiply(a, b) {
@@ -353,387 +336,229 @@ const mat4 = {
     }
     return o;
   },
-  rotateY(rad) {
-    const c = Math.cos(rad), s = Math.sin(rad);
-    return new Float32Array([c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1]);
-  },
-  rotateX(rad) {
-    const c = Math.cos(rad), s = Math.sin(rad);
-    return new Float32Array([1,0,0,0, 0,c,s,0, 0,-s,c,0, 0,0,0,1]);
-  },
+  rotateY(r) { const c=Math.cos(r), s=Math.sin(r); return new Float32Array([c,0,-s,0, 0,1,0,0, s,0,c,0, 0,0,0,1]); },
+  rotateX(r) { const c=Math.cos(r), s=Math.sin(r); return new Float32Array([1,0,0,0, 0,c,s,0, 0,-s,c,0, 0,0,0,1]); },
+  rotateZ(r) { const c=Math.cos(r), s=Math.sin(r); return new Float32Array([c,s,0,0, -s,c,0,0, 0,0,1,0, 0,0,0,1]); },
   perspective(fovy, aspect, near, far) {
     const f = 1 / Math.tan(fovy / 2), nf = 1 / (near - far);
-    return new Float32Array([
-      f/aspect,0,0,0, 0,f,0,0, 0,0,(far+near)*nf,-1, 0,0,2*far*near*nf,0
-    ]);
+    return new Float32Array([f/aspect,0,0,0, 0,f,0,0, 0,0,(far+near)*nf,-1, 0,0,2*far*near*nf,0]);
   },
   lookAt(eye, center, up) {
-    function sub(a,b){return [a[0]-b[0],a[1]-b[1],a[2]-b[2]];}
-    function norm(a){const l=Math.hypot(a[0],a[1],a[2])||1;return [a[0]/l,a[1]/l,a[2]/l];}
-    function cross(a,b){return [a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];}
-    const zAxis = norm(sub(eye, center));
-    const xAxis = norm(cross(up, zAxis));
-    const yAxis = cross(zAxis, xAxis);
+    const sub=(a,b)=>[a[0]-b[0],a[1]-b[1],a[2]-b[2]], norm=a=>{const l=Math.hypot(...a)||1;return a.map(v=>v/l);};
+    const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]];
+    const z = norm(sub(eye, center)), x = norm(cross(up, z)), y = cross(z, x);
     return new Float32Array([
-      xAxis[0], yAxis[0], zAxis[0], 0,
-      xAxis[1], yAxis[1], zAxis[1], 0,
-      xAxis[2], yAxis[2], zAxis[2], 0,
-      -(xAxis[0]*eye[0]+xAxis[1]*eye[1]+xAxis[2]*eye[2]),
-      -(yAxis[0]*eye[0]+yAxis[1]*eye[1]+yAxis[2]*eye[2]),
-      -(zAxis[0]*eye[0]+zAxis[1]*eye[1]+zAxis[2]*eye[2]), 1
+      x[0], y[0], z[0], 0,  x[1], y[1], z[1], 0,  x[2], y[2], z[2], 0,
+      -(x[0]*eye[0]+x[1]*eye[1]+x[2]*eye[2]),
+      -(y[0]*eye[0]+y[1]*eye[1]+y[2]*eye[2]),
+      -(z[0]*eye[0]+z[1]*eye[1]+z[2]*eye[2]), 1
     ]);
   }
 };
 
-/* ---------- shaders ---------- */
+/* Shaders WebGL */
 const VERT_SRC = `
-attribute vec3 aPosition;
-attribute vec3 aNormal;
-attribute vec2 aUV;
-uniform mat4 uModel, uView, uProjection;
-uniform mat3 uNormalMatrix;
-varying vec3 vNormal;
-varying vec2 vUV;
-varying vec3 vWorldPos;
+attribute vec3 aPosition; attribute vec3 aNormal; attribute vec2 aUV;
+uniform mat4 uModel, uView, uProjection; uniform mat3 uNormalMatrix;
+varying vec3 vNormal, vWorldPos; varying vec2 vUV;
 void main() {
   vec4 wp = uModel * vec4(aPosition, 1.0);
-  vWorldPos = wp.xyz;
-  vNormal = normalize(uNormalMatrix * aNormal);
-  vUV = aUV;
+  vWorldPos = wp.xyz; vNormal = normalize(uNormalMatrix * aNormal); vUV = aUV;
   gl_Position = uProjection * uView * wp;
 }`;
 
 const FRAG_SRC = `
 precision highp float;
-varying vec3 vNormal;
-varying vec2 vUV;
-varying vec3 vWorldPos;
+varying vec3 vNormal, vWorldPos; varying vec2 vUV;
 uniform sampler2D uDayTex, uNightTex, uCloudTex;
 uniform vec3 uSunDir, uViewPos;
 void main() {
   vec3 N = normalize(vNormal);
   vec3 L = normalize(uSunDir);
   float NdotL = dot(N, L);
-  float dayMix = smoothstep(-0.18, 0.15, NdotL);
+  float dayMix = smoothstep(-0.15, 0.2, NdotL);
 
   vec3 dayColor = texture2D(uDayTex, vUV).rgb;
   vec3 nightColor = texture2D(uNightTex, vUV).rgb;
   float cloudAlpha = texture2D(uCloudTex, vUV).a;
 
-  float diffuse = max(NdotL, 0.0);
-  vec3 litDay = dayColor * (0.5 + 0.5 * diffuse);
+  // Brillo Diurno
+  vec3 litDay = dayColor * max(NdotL, 0.1);
+  vec3 surface = mix(nightColor * 1.5, litDay, dayMix);
 
-  vec3 surface = mix(nightColor, litDay, dayMix);
-  surface *= (1.0 - cloudAlpha * 0.2);
+  // Nubes
+  vec3 cloudColor = vec3(1.0) * (0.2 + 0.8 * dayMix);
+  surface = mix(surface, cloudColor, cloudAlpha * 0.85);
 
-  vec3 cloudLit = vec3(1.0) * (0.25 + 0.75 * dayMix);
-  surface = mix(surface, cloudLit, cloudAlpha * 0.8);
-
+  // Reflejo Especular del Océano
   vec3 V = normalize(uViewPos - vWorldPos);
-  float oceanMask = smoothstep(0.02, 0.18, dayColor.b - max(dayColor.r, dayColor.g));
+  float isOcean = step(dayColor.b, dayColor.g + 0.05);
   vec3 R = reflect(-L, N);
-  float spec = pow(max(dot(R, V), 0.0), 40.0) * oceanMask * diffuse;
-  surface += vec3(0.9, 0.95, 1.0) * spec * 0.6;
+  float spec = pow(max(dot(R, V), 0.0), 30.0) * (1.0 - isOcean) * (1.0 - cloudAlpha);
+  surface += vec3(0.8, 0.9, 1.0) * spec * dayMix;
 
-  float fresnel = pow(1.0 - max(dot(N, V), 0.0), 2.2);
-  vec3 atmColor = mix(vec3(0.05,0.12,0.28), vec3(0.35,0.6,0.95), dayMix);
-  surface += atmColor * fresnel * (0.35 + 0.5 * dayMix);
+  // Atmósfera de Borde (Rayleigh)
+  float fresnel = pow(1.0 - max(dot(N, V), 0.0), 2.5);
+  vec3 atmColor = mix(vec3(0.02, 0.05, 0.15), vec3(0.3, 0.6, 1.0), dayMix);
+  surface += atmColor * fresnel * 0.6;
 
   gl_FragColor = vec4(surface, 1.0);
 }`;
 
-const ATM_VERT_SRC = `
-attribute vec3 aPosition;
-attribute vec3 aNormal;
-uniform mat4 uModel, uView, uProjection;
-uniform mat3 uNormalMatrix;
-varying vec3 vNormal;
-varying vec3 vWorldPos;
-void main() {
-  vec4 wp = uModel * vec4(aPosition, 1.0);
-  vWorldPos = wp.xyz;
-  vNormal = normalize(uNormalMatrix * aNormal);
-  gl_Position = uProjection * uView * wp;
-}`;
-
-const ATM_FRAG_SRC = `
-precision highp float;
-varying vec3 vNormal;
-varying vec3 vWorldPos;
-uniform vec3 uSunDir, uViewPos;
-void main() {
-  vec3 N = normalize(vNormal);
-  vec3 V = normalize(uViewPos - vWorldPos);
-  float NdotL = dot(N, normalize(uSunDir));
-  float dayMix = smoothstep(-0.3, 0.3, NdotL);
-  float fres = pow(1.0 - max(dot(N, V), 0.0), 3.0);
-  vec3 atmColor = mix(vec3(0.04,0.09,0.22), vec3(0.35,0.6,1.0), dayMix);
-  gl_FragColor = vec4(atmColor * fres, fres * 0.85);
-}`;
-
-function compileShader(gl, src, type) {
-  const s = gl.createShader(type);
-  gl.shaderSource(s, src);
-  gl.compileShader(s);
-  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
-    console.error(gl.getShaderInfoLog(s));
-  }
-  return s;
-}
-function buildProgram(gl, vsrc, fsrc) {
-  const p = gl.createProgram();
-  gl.attachShader(p, compileShader(gl, vsrc, gl.VERTEX_SHADER));
-  gl.attachShader(p, compileShader(gl, fsrc, gl.FRAGMENT_SHADER));
-  gl.linkProgram(p);
-  if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
-    console.error(gl.getProgramInfoLog(p));
-  }
-  return p;
-}
-
-/* ---------- init ---------- */
+/* Configuración WebGL */
 const glCanvas = document.getElementById('gl');
-const gl = glCanvas.getContext('webgl', { antialias: true, alpha: false }) ||
-           glCanvas.getContext('experimental-webgl');
+const gl = glCanvas.getContext('webgl', { antialias: true }) || glCanvas.getContext('experimental-webgl');
 
 if (!gl) {
   document.getElementById('fallback').style.display = 'flex';
 } else {
-  const TEX_W = 2048, TEX_H = 1024;
-  const dayCanvas = buildDayCanvas(TEX_W, TEX_H);
-  const nightCanvas = buildNightCanvas(TEX_W, TEX_H);
-  const cloudCanvas = buildCloudCanvas(1024, 512);
+  const dayTex = makeGLTexture(buildDayCanvas(2048, 1024));
+  const nightTex = makeGLTexture(buildNightCanvas(2048, 1024));
+  const cloudTex = makeGLTexture(buildCloudCanvas(1024, 512));
 
-  function makeTexture(source) {
+  function makeGLTexture(canvas) {
     const tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
     gl.generateMipmap(gl.TEXTURE_2D);
     return tex;
   }
 
-  const dayTex = makeTexture(dayCanvas);
-  const nightTex = makeTexture(nightCanvas);
-  const cloudTex = makeTexture(cloudCanvas);
-
   const sphere = buildSphere(64, 128, 1.0);
-  const atmSphere = buildSphere(48, 96, 1.03);
+  const posBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, posBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(sphere.positions), gl.STATIC_DRAW);
+  const normBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, normBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(sphere.normals), gl.STATIC_DRAW);
+  const uvBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, uvBuf); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(sphere.uvs), gl.STATIC_DRAW);
+  const idxBuf = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(sphere.indices), gl.STATIC_DRAW);
 
-  function makeBuffers(mesh) {
-    const posBuf = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.positions), gl.STATIC_DRAW);
-    const normBuf = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, normBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.normals), gl.STATIC_DRAW);
-    let uvBuf = null;
-    if (mesh.uvs) {
-      uvBuf = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, uvBuf);
-      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(mesh.uvs), gl.STATIC_DRAW);
-    }
-    const idxBuf = gl.createBuffer();
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(mesh.indices), gl.STATIC_DRAW);
-    return { posBuf, normBuf, uvBuf, idxBuf, count: mesh.indices.length };
+  function createShader(src, type) {
+    const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); return s;
   }
+  const program = gl.createProgram();
+  gl.attachShader(program, createShader(VERT_SRC, gl.VERTEX_SHADER));
+  gl.attachShader(program, createShader(FRAG_SRC, gl.FRAGMENT_SHADER));
+  gl.linkProgram(program); gl.useProgram(program);
 
-  const earthBuf = makeBuffers(sphere);
-  const atmBuf = makeBuffers(atmSphere);
-
-  const earthProgram = buildProgram(gl, VERT_SRC, FRAG_SRC);
-  const atmProgram = buildProgram(gl, ATM_VERT_SRC, ATM_FRAG_SRC);
-
-  const eLoc = {
-    aPosition: gl.getAttribLocation(earthProgram, 'aPosition'),
-    aNormal: gl.getAttribLocation(earthProgram, 'aNormal'),
-    aUV: gl.getAttribLocation(earthProgram, 'aUV'),
-    uModel: gl.getUniformLocation(earthProgram, 'uModel'),
-    uView: gl.getUniformLocation(earthProgram, 'uView'),
-    uProjection: gl.getUniformLocation(earthProgram, 'uProjection'),
-    uNormalMatrix: gl.getUniformLocation(earthProgram, 'uNormalMatrix'),
-    uDayTex: gl.getUniformLocation(earthProgram, 'uDayTex'),
-    uNightTex: gl.getUniformLocation(earthProgram, 'uNightTex'),
-    uCloudTex: gl.getUniformLocation(earthProgram, 'uCloudTex'),
-    uSunDir: gl.getUniformLocation(earthProgram, 'uSunDir'),
-    uViewPos: gl.getUniformLocation(earthProgram, 'uViewPos'),
-  };
-  const aLoc = {
-    aPosition: gl.getAttribLocation(atmProgram, 'aPosition'),
-    aNormal: gl.getAttribLocation(atmProgram, 'aNormal'),
-    uModel: gl.getUniformLocation(atmProgram, 'uModel'),
-    uView: gl.getUniformLocation(atmProgram, 'uView'),
-    uProjection: gl.getUniformLocation(atmProgram, 'uProjection'),
-    uNormalMatrix: gl.getUniformLocation(atmProgram, 'uNormalMatrix'),
-    uSunDir: gl.getUniformLocation(atmProgram, 'uSunDir'),
-    uViewPos: gl.getUniformLocation(atmProgram, 'uViewPos'),
+  const locs = {
+    aPos: gl.getAttribLocation(program, 'aPosition'),
+    aNorm: gl.getAttribLocation(program, 'aNormal'),
+    aUV: gl.getAttribLocation(program, 'aUV'),
+    uModel: gl.getUniformLocation(program, 'uModel'),
+    uView: gl.getUniformLocation(program, 'uView'),
+    uProj: gl.getUniformLocation(program, 'uProjection'),
+    uNormMat: gl.getUniformLocation(program, 'uNormalMatrix'),
+    uSunDir: gl.getUniformLocation(program, 'uSunDir'),
+    uViewPos: gl.getUniformLocation(program, 'uViewPos'),
+    uDayTex: gl.getUniformLocation(program, 'uDayTex'),
+    uNightTex: gl.getUniformLocation(program, 'uNightTex'),
+    uCloudTex: gl.getUniformLocation(program, 'uCloudTex')
   };
 
-  /* ---------- starfield (2D background canvas) ---------- */
+  /* Interacción con Cámara */
+  let camRotX = 0, camRotY = 0, dragging = false, lastX = 0, lastY = 0;
+  glCanvas.addEventListener('mousedown', e => { dragging = true; lastX = e.clientX; lastY = e.clientY; });
+  window.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    camRotY += (e.clientX - lastX) * 0.005;
+    camRotX += (e.clientY - lastY) * 0.005;
+    camRotX = Math.max(-1.2, Math.min(1.2, camRotX));
+    lastX = e.clientX; lastY = e.clientY;
+  });
+  window.addEventListener('mouseup', () => dragging = false);
+
+  /* Estrellas de Fondo */
   const starsCanvas = document.getElementById('stars');
   const sctx = starsCanvas.getContext('2d');
-  let stars = [];
-  function buildStars() {
-    stars = [];
-    const rng = mulberry32(99);
-    const count = Math.floor((window.innerWidth * window.innerHeight) / 1400);
-    for (let i = 0; i < count; i++) {
-      stars.push({
-        x: rng() * window.innerWidth,
-        y: rng() * window.innerHeight,
-        r: rng() * 1.3 + 0.2,
-        b: rng() * 0.6 + 0.3,
-        tw: rng() * Math.PI * 2,
-      });
+  function drawStars() {
+    starsCanvas.width = window.innerWidth; starsCanvas.height = window.innerHeight;
+    sctx.fillStyle = '#000005'; sctx.fillRect(0, 0, starsCanvas.width, starsCanvas.height);
+    const rand = mulberry32(123);
+    for (let i = 0; i < 400; i++) {
+      sctx.fillStyle = `rgba(255,255,255,${rand() * 0.8 + 0.2})`;
+      sctx.beginPath(); sctx.arc(rand() * starsCanvas.width, rand() * starsCanvas.height, rand() * 1.2, 0, Math.PI * 2); sctx.fill();
     }
   }
-  function drawStars(t) {
-    sctx.clearRect(0, 0, starsCanvas.width, starsCanvas.height);
-    sctx.fillStyle = '#000005';
-    sctx.fillRect(0, 0, starsCanvas.width, starsCanvas.height);
-    stars.forEach(s => {
-      const flicker = 0.75 + 0.25 * Math.sin(t * 0.001 + s.tw);
-      sctx.fillStyle = `rgba(210,220,240,${s.b * flicker})`;
-      sctx.beginPath();
-      sctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-      sctx.fill();
-    });
-  }
-
-  /* ---------- interaction ---------- */
-  let rotY = 0.6, rotX = 0.32;
-  let velY = 0.0009, velX = 0;
-  let dragging = false, lastX = 0, lastY = 0;
-
-  function pointerDown(x, y) { dragging = true; lastX = x; lastY = y; velY = 0; velX = 0; }
-  function pointerMove(x, y) {
-    if (!dragging) return;
-    const dx = x - lastX, dy = y - lastY;
-    rotY += dx * 0.005;
-    rotX += dy * 0.005;
-    rotX = Math.max(-1.35, Math.min(1.35, rotX));
-    velY = dx * 0.005;
-    velX = dy * 0.005;
-    lastX = x; lastY = y;
-  }
-  function pointerUp() { dragging = false; }
-
-  glCanvas.addEventListener('mousedown', e => pointerDown(e.clientX, e.clientY));
-  window.addEventListener('mousemove', e => pointerMove(e.clientX, e.clientY));
-  window.addEventListener('mouseup', pointerUp);
-  glCanvas.addEventListener('touchstart', e => { const t = e.touches[0]; pointerDown(t.clientX, t.clientY); }, { passive: true });
-  glCanvas.addEventListener('touchmove', e => { const t = e.touches[0]; pointerMove(t.clientX, t.clientY); }, { passive: true });
-  glCanvas.addEventListener('touchend', pointerUp);
-
-  /* ---------- resize ---------- */
-  function resize() {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const w = window.innerWidth, h = window.innerHeight;
-    [glCanvas, starsCanvas].forEach(c => {
-      c.width = w * dpr; c.height = h * dpr;
-      c.style.width = w + 'px'; c.style.height = h + 'px';
-    });
+  window.addEventListener('resize', () => {
+    glCanvas.width = window.innerWidth; glCanvas.height = window.innerHeight;
     gl.viewport(0, 0, glCanvas.width, glCanvas.height);
-    buildStars();
-  }
-  window.addEventListener('resize', resize);
-  resize();
+    drawStars();
+  });
+  drawStars();
 
-  /* ---------- render loop ---------- */
-  const sunDir = [0.85, 0.28, 0.4];
-  const eye = [0, 0, 3.3];
+  /* Bucle de Renderizado Principal */
+  let simulatedSeconds = 0;
+  let lastTimestamp = performance.now();
 
-  gl.enable(gl.DEPTH_TEST);
-  gl.clearColor(0.0, 0.0, 0.02, 1.0);
+  function frame(now) {
+    const delta = (now - lastTimestamp) / 1000;
+    lastTimestamp = now;
 
-  function normalMat3(m) {
-    // pure-rotation model matrix: top-left 3x3, row-major->col-major already consistent
-    return new Float32Array([m[0],m[1],m[2], m[4],m[5],m[6], m[8],m[9],m[10]]);
-  }
+    const date = new Date();
+    // Calcular segundos transcurridos en el día UTC actual
+    const currentUTCSeconds = date.getUTCHours() * 3600 + date.getUTCMinutes() * 60 + date.getUTCSeconds() + date.getUTCMilliseconds() / 1000;
 
-  function frame(t) {
-    if (!dragging) {
-      rotY += velY * 0.985 + 0.0007;
-      rotX += velX * 0.94;
-      velX *= 0.94;
-      rotX = Math.max(-1.35, Math.min(1.35, rotX));
+    if (speedMultiplier === 1) {
+      simulatedSeconds = currentUTCSeconds;
+    } else {
+      simulatedSeconds += delta * speedMultiplier;
     }
 
-    drawStars(t);
+    // Actualizar HUD de hora
+    const displayDate = new Date(date.getTime() + (speedMultiplier > 1 ? (simulatedSeconds - currentUTCSeconds) * 1000 : 0));
+    document.getElementById('utc-time').innerText = displayDate.toUTCString().split(' ')[4];
 
-    const aspect = glCanvas.width / glCanvas.height;
-    const halfAngle = 22.5 * Math.PI / 180; // desired half-angle margin on the constrained axis
-    const fovy = aspect >= 1 ? halfAngle * 2 : 2 * Math.atan(Math.tan(halfAngle) / aspect);
-    const proj = mat4.perspective(fovy, aspect, 0.1, 100);
-    const view = mat4.lookAt(eye, [0, 0, 0], [0, 1, 0]);
-    const model = mat4.multiply(mat4.rotateY(rotY), mat4.rotateX(rotX));
-    const nMat = normalMat3(model);
+    /* 
+       Rotación Terrestre Real: 
+       1 día solar = 86,400 segundos = 2*PI radianes
+    */
+    const earthRotationAngle = (simulatedSeconds / 86400) * Math.PI * 2;
 
+    // Inclinación axial de la Tierra (23.44 grados)
+    const AXIAL_TILT = 23.44 * Math.PI / 180;
+
+    // Matriz de Modelo (Planeta)
+    let model = mat4.identity();
+    model = mat4.multiply(model, mat4.rotateX(camRotX));
+    model = mat4.multiply(model, mat4.rotateY(camRotY));
+    model = mat4.multiply(model, mat4.rotateZ(AXIAL_TILT)); // Inclinación real
+    model = mat4.multiply(model, mat4.rotateY(earthRotationAngle)); // Rotación real en tiempo real
+
+    // Dirección del Sol (Alineada con el ciclo diario)
+    const sunDir = [Math.sin(0), 0.1, Math.cos(0)];
+
+    const aspect = window.innerWidth / window.innerHeight;
+    const proj = mat4.perspective(45 * Math.PI / 180, aspect, 0.1, 100);
+    const view = mat4.lookAt([0, 0, 3.2], [0, 0, 0], [0, 1, 0]);
+
+    gl.enable(gl.DEPTH_TEST);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    // earth
-    gl.useProgram(earthProgram);
-    gl.enable(gl.CULL_FACE); gl.cullFace(gl.BACK);
-    gl.disable(gl.BLEND);
+    gl.bindBuffer(gl.ARRAY_BUFFER, posBuf); gl.vertexAttribPointer(locs.aPos, 3, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(locs.aPos);
+    gl.bindBuffer(gl.ARRAY_BUFFER, normBuf); gl.vertexAttribPointer(locs.aNorm, 3, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(locs.aNorm);
+    gl.bindBuffer(gl.ARRAY_BUFFER, uvBuf); gl.vertexAttribPointer(locs.aUV, 2, gl.FLOAT, false, 0, 0); gl.enableVertexAttribArray(locs.aUV);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, idxBuf);
 
-    gl.bindBuffer(gl.ARRAY_BUFFER, earthBuf.posBuf);
-    gl.vertexAttribPointer(eLoc.aPosition, 3, gl.FLOAT, false, 0, 0);
-    gl.enableVertexAttribArray(eLoc.aPosition);
-    gl.bindBuffer(gl.ARRAY_BUFFER, earthBuf.normBuf);
-    gl.vertexAttribPointer(eLoc.aNormal, 3, gl.FLOAT, false, 0, 0);
-    gl.enableVertexAttribArray(eLoc.aNormal);
-    gl.bindBuffer(gl.ARRAY_BUFFER, earthBuf.uvBuf);
-    gl.vertexAttribPointer(eLoc.aUV, 2, gl.FLOAT, false, 0, 0);
-    gl.enableVertexAttribArray(eLoc.aUV);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, earthBuf.idxBuf);
+    gl.uniformMatrix4fv(locs.uModel, false, model);
+    gl.uniformMatrix4fv(locs.uView, false, view);
+    gl.uniformMatrix4fv(locs.uProj, false, proj);
+    gl.uniformMatrix3fv(locs.uNormMat, false, new Float32Array([
+      model[0], model[1], model[2],
+      model[4], model[5], model[6],
+      model[8], model[9], model[10]
+    ]));
+    gl.uniform3fv(locs.uSunDir, sunDir);
+    gl.uniform3fv(locs.uViewPos, [0, 0, 3.2]);
 
-    gl.uniformMatrix4fv(eLoc.uModel, false, model);
-    gl.uniformMatrix4fv(eLoc.uView, false, view);
-    gl.uniformMatrix4fv(eLoc.uProjection, false, proj);
-    gl.uniformMatrix3fv(eLoc.uNormalMatrix, false, nMat);
-    gl.uniform3fv(eLoc.uSunDir, sunDir);
-    gl.uniform3fv(eLoc.uViewPos, eye);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, dayTex); gl.uniform1i(locs.uDayTex, 0);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, nightTex); gl.uniform1i(locs.uNightTex, 1);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, cloudTex); gl.uniform1i(locs.uCloudTex, 2);
 
-    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, dayTex); gl.uniform1i(eLoc.uDayTex, 0);
-    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, nightTex); gl.uniform1i(eLoc.uNightTex, 1);
-    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, cloudTex); gl.uniform1i(eLoc.uCloudTex, 2);
-
-    gl.drawElements(gl.TRIANGLES, earthBuf.count, gl.UNSIGNED_SHORT, 0);
-
-    // atmosphere halo (backfaces, additive)
-    gl.useProgram(atmProgram);
-    gl.cullFace(gl.FRONT);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.ONE, gl.ONE);
-    gl.depthMask(false);
-
-    gl.bindBuffer(gl.ARRAY_BUFFER, atmBuf.posBuf);
-    gl.vertexAttribPointer(aLoc.aPosition, 3, gl.FLOAT, false, 0, 0);
-    gl.enableVertexAttribArray(aLoc.aPosition);
-    gl.bindBuffer(gl.ARRAY_BUFFER, atmBuf.normBuf);
-    gl.vertexAttribPointer(aLoc.aNormal, 3, gl.FLOAT, false, 0, 0);
-    gl.enableVertexAttribArray(aLoc.aNormal);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, atmBuf.idxBuf);
-
-    gl.uniformMatrix4fv(aLoc.uModel, false, model);
-    gl.uniformMatrix4fv(aLoc.uView, false, view);
-    gl.uniformMatrix4fv(aLoc.uProjection, false, proj);
-    gl.uniformMatrix3fv(aLoc.uNormalMatrix, false, nMat);
-    gl.uniform3fv(aLoc.uSunDir, sunDir);
-    gl.uniform3fv(aLoc.uViewPos, eye);
-
-    gl.drawElements(gl.TRIANGLES, atmBuf.count, gl.UNSIGNED_SHORT, 0);
-
-    gl.depthMask(true);
-    gl.cullFace(gl.BACK);
+    gl.drawElements(gl.TRIANGLES, sphere.indices.length, gl.UNSIGNED_SHORT, 0);
 
     requestAnimationFrame(frame);
   }
+
+  window.dispatchEvent(new Event('resize'));
   requestAnimationFrame(frame);
 }
 </script>
