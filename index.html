@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Planeta Tierra - Rotación Realista</title>
+<title>Planeta Tierra - Ultra Realista</title>
 <style>
   html, body {
     margin: 0; padding: 0;
@@ -26,29 +26,29 @@
     position: absolute;
     top: 20px; left: 20px;
     z-index: 10;
-    background: rgba(10, 15, 30, 0.65);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border: 1px solid rgba(100, 180, 255, 0.2);
-    padding: 16px 20px;
-    border-radius: 12px;
+    background: rgba(10, 15, 30, 0.75);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(100, 180, 255, 0.25);
+    padding: 18px 22px;
+    border-radius: 14px;
     color: #e0e6ed;
     font-size: 13px;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.08);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.1);
     pointer-events: none;
     user-select: none;
-    min-width: 220px;
+    min-width: 240px;
   }
   #hud h1 {
-    margin: 0 0 8px 0;
-    font-size: 15px;
-    font-weight: 600;
+    margin: 0 0 10px 0;
+    font-size: 16px;
+    font-weight: 700;
     color: #fff;
-    letter-spacing: 0.8px;
-    text-shadow: 0 0 12px rgba(100,180,255,0.4);
+    letter-spacing: 1px;
+    text-shadow: 0 0 15px rgba(100,180,255,0.5);
   }
   .info-row {
-    margin: 5px 0;
+    margin: 6px 0;
     color: #8b9bb4;
     display: flex;
     justify-content: space-between;
@@ -72,7 +72,7 @@
 <canvas id="gl"></canvas>
 
 <div id="hud">
-  <h1>🌍 TIERRA EN TIEMPO REAL</h1>
+  <h1>🌍 TIERRA ULTRA REALISTA</h1>
   <div class="info-row"><span>Hora UTC:</span><span id="utc-time" class="info-val">00:00:00</span></div>
   <div class="info-row"><span>Velocidad:</span><span class="info-val" id="speed-val">500× (Demo)</span></div>
   <div class="info-row"><span>Inclinación axial:</span><span class="info-val">23.44°</span></div>
@@ -84,13 +84,13 @@
 
 <script>
 /* ═══════════════════════════════════════════════════════════════════════
-   TIERRA REALISTA — Rotación visible, atmósfera, nubes, luces nocturnas,
-   reflejo oceánico especular, campo estelar y continentes orgánicos.
+   TIERRA ULTRA REALISTA — Costas fractales, cordilleras reales, 
+   casquetes polares 3D y rotación visible.
    ═══════════════════════════════════════════════════════════════════════ */
 
 /* ─── CONFIGURACIÓN DE VELOCIDAD ────────────────────────────────────── */
-// 1.0 = Tiempo real (24 horas por vuelta, apenas visible)
-// 500.0 = Velocidad de demostración (visible, fluida y recomendada)
+// 1.0 = Tiempo real absoluto (casi imperceptible)
+// 500.0 = Velocidad de demostración fluida y visible (Recomendado)
 const ROTATION_SPEED = 500.0;
 
 /* ─── Ruido procedural mejorado (fBm multi-octava) ─────────────────── */
@@ -131,61 +131,104 @@ function terrainNoise(x, y) {
          noiseC(x * 4.3, y * 4.3) * 0.15 + noiseD(x * 9, y * 9) * 0.07;
 }
 
-/* ─── Datos geográficos (continentes, islas, ciudades) ─────────────── */
+/* ─── Datos geográficos de ALTA DEFINICIÓN ─────────────────────────── */
 const CONTINENTS = [
-  { pts: [[71,-156],[72,-140],[70,-128],[66,-120],[60,-115],[55,-130],[48,-124],[42,-124],[38,-122],[32,-117],[28,-114],[23,-110],[19,-105],[16,-95],[15,-88],[10,-83],[8,-78],[12,-72],[18,-76],[21,-87],[25,-97],[29,-94],[30,-89],[28,-82],[30,-80],[35,-76],[40,-73],[44,-67],[47,-52],[55,-56],[60,-64],[66,-75],[70,-85],[73,-95],[75,-110],[72,-125],[71,-156]] },
-  { pts: [[83,-38],[80,-20],[75,-18],[68,-25],[60,-42],[63,-52],[72,-65],[80,-62],[83,-38]] },
-  { pts: [[12,-72],[11,-63],[8,-50],[5,-43],[0,-38],[-8,-35],[-15,-39],[-23,-43],[-33,-50],[-42,-62],[-50,-69],[-55,-72],[-52,-75],[-45,-74],[-35,-72],[-25,-71],[-18,-71],[-12,-77],[-5,-81],[1,-79],[6,-77],[10,-75],[12,-72]] },
-  { pts: [[37,10],[36,0],[33,-10],[28,-13],[22,-17],[16,-17],[11,-13],[6,-3],[1,6],[-5,8],[-12,13],[-22,14],[-30,17],[-34,26],[-30,32],[-22,35],[-12,42],[2,48],[11,51],[13,43],[18,42],[25,38],[31,32],[34,22],[37,10]] },
-  { pts: [[71,28],[68,40],[60,30],[55,30],[50,40],[45,30],[40,20],[36,8],[40,-5],[44,-9],[50,-5],[55,8],[60,18],[66,22],[71,28]] },
-  { pts: [[71,28],[66,40],[62,50],[55,55],[50,60],[45,65],[40,55],[35,45],[30,40],[28,35],[35,30],[40,25],[42,15],[38,10],[30,20],[25,30],[20,40],[15,50],[10,60],[5,70],[10,80],[18,88],[22,95],[15,100],[8,102],[5,108],[10,110],[18,108],[22,114],[28,120],[35,122],[40,125],[45,135],[50,140],[55,145],[60,155],[66,165],[70,175],[72,170],[71,140],[70,100],[70,60],[71,28]] },
-  { pts: [[-11,131],[-14,127],[-18,122],[-23,113],[-30,114],[-35,118],[-37,140],[-35,148],[-32,152],[-25,150],[-18,146],[-12,142],[-11,131]] },
-  { pts: [[-62,-180],[-65,-150],[-68,-120],[-70,-80],[-72,-40],[-70,0],[-68,40],[-66,80],[-64,120],[-62,160],[-60,180],[-88,180],[-88,-180]] },
-  { pts: [[-12,49],[-15,47],[-20,46],[-25,46],[-25,44],[-22,43],[-16,44],[-13,46],[-12,49]] }
+  { name: "Norteamérica", pts: [[71,-168],[70,-150],[71,-140],[72,-130],[70,-120],[66,-115],[60,-110],[55,-130],[48,-125],[42,-124],[38,-122],[32,-117],[28,-113],[23,-109],[19,-105],[16,-95],[15,-88],[10,-83],[8,-78],[12,-72],[18,-76],[21,-87],[25,-97],[29,-94],[30,-89],[28,-82],[30,-80],[35,-76],[40,-73],[44,-67],[47,-53],[55,-56],[60,-64],[66,-75],[70,-85],[73,-95],[75,-110],[72,-125],[71,-168]] },
+  { name: "Caribe", pts: [[20,-75],[20,-70],[18,-67],[15,-62],[12,-61],[10,-64],[12,-68],[15,-73],[18,-75]] },
+  { name: "Cuba", pts: [[23,-84],[23,-78],[20,-78],[20,-84]] },
+  { name: "Sudamérica", pts: [[12,-72],[11,-63],[8,-50],[5,-43],[0,-38],[-5,-35],[-10,-37],[-15,-39],[-23,-43],[-33,-50],[-42,-62],[-50,-69],[-55,-72],[-52,-75],[-45,-74],[-35,-72],[-25,-71],[-18,-71],[-12,-77],[-5,-81],[0,-80],[5,-77],[10,-75],[12,-72]] },
+  { name: "África", pts: [[37,10],[36,0],[33,-10],[28,-13],[22,-17],[16,-17],[11,-13],[6,-3],[1,6],[-5,8],[-12,13],[-22,14],[-30,17],[-34,26],[-30,32],[-22,35],[-12,42],[0,48],[11,51],[13,43],[18,42],[25,38],[31,32],[34,22],[37,10]] },
+  { name: "Madagascar", pts: [[-12,49],[-15,47],[-20,46],[-25,46],[-25,44],[-22,43],[-16,44],[-13,46],[-12,49]] },
+  { name: "Europa", pts: [[71,28],[68,40],[60,30],[55,30],[50,40],[45,30],[40,20],[36,8],[40,-5],[44,-9],[50,-5],[55,8],[60,18],[66,22],[71,28]] },
+  { name: "Reino Unido", pts: [[58,-5],[55,-2],[51,1],[50,-4],[53,-6],[58,-5]] },
+  { name: "Italia", pts: [[46,13],[44,12],[40,15],[38,16],[40,18],[44,15],[46,13]] },
+  { name: "Escandinavia", pts: [[71,28],[70,20],[68,15],[65,12],[60,10],[58,15],[60,20],[65,25],[70,30],[71,28]] },
+  { name: "Asia", pts: [[71,28],[66,40],[62,50],[55,55],[50,60],[45,65],[40,55],[35,45],[30,40],[28,35],[25,30],[20,40],[15,50],[10,60],[5,70],[10,80],[18,88],[22,95],[15,100],[8,102],[5,108],[10,110],[18,108],[22,114],[28,120],[35,122],[40,125],[45,135],[50,140],[55,145],[60,155],[66,165],[70,175],[72,170],[71,140],[70,100],[70,60],[71,28]] },
+  { name: "India", pts: [[28,68],[22,68],[15,73],[8,77],[10,80],[15,80],[22,88],[28,88],[28,68]] },
+  { name: "Japón", pts: [[43,145],[40,142],[35,139],[31,131],[33,130],[36,136],[40,140],[43,145]] },
+  { name: "Australia", pts: [[-11,131],[-14,127],[-18,122],[-23,113],[-30,114],[-35,118],[-37,140],[-35,148],[-32,152],[-25,150],[-18,146],[-12,142],[-11,131]] }
 ];
 
 const ISLANDS = [
-  [36,138,6,3,0.3],[40,140,3,1.5,0.2],
-  [57,-3,4,2,0.4],[53,-8,2.5,1.5,0.3],
-  [66,-18,3,2,0.1],[63,-20,2,1,0],
-  [-3,115,5,3.5,0],[-5,120,3,2,0.1],[-3,130,3,2,0],
-  [13,122,4,2,0.4],[10,125,2,1,0.2],
-  [22,-80,1.5,5,-0.1],[18,-77,1,1,0],
-  [-42,173,4,1.5,0.6],[-44,170,3,1.2,0.5],
-  [30,-17,1.5,1.5,0],[28,-16,1,0.8,0],
-  [55,15,1,0.5,0],[58,18,1,0.5,0],
+  [66,-18,3,2,0.1],[63,-20,2,1,0], // Islandia
+  [-3,115,5,3.5,0],[-5,120,3,2,0.1],[-3,130,3,2,0], // Borneo, Indonesia
+  [13,122,4,2,0.4],[10,125,2,1,0.2], // Filipinas
+  [22,-80,1.5,5,-0.1],[18,-77,1,1,0], // Cuba detallada, Jamaica
+  [-42,173,4,1.5,0.6],[-44,170,3,1.2,0.5], // Nueva Zelanda
+  [30,-17,1.5,1.5,0],[28,-16,1,0.8,0], // Canarias
+  [55,15,1,0.5,0],[58,18,1,0.5,0], // Báltico
+  [35,139,2,1,0.2],[36,140,1.5,0.8,0] // Japón extra
 ];
 
 const CITIES = [
-  [40.7,-74.0],[34.0,-118.2],[41.9,-87.6],[29.7,-95.4],[33.0,-96.7],[37.8,-122.3],
-  [25.8,-80.2],[39.0,-77.0],[42.4,-71.1],[38.9,-77.0],[36.2,-115.1],[32.8,-117.2],
-  [19.4,-99.1],[20.7,-103.3],[25.7,-100.3],[22.2,-100.9],[13.7,-89.2],[14.6,-90.5],
-  [9.0,-79.5],[4.7,-74.1],[10.5,-66.9],[-12.0,-77.0],[-23.5,-46.6],[-34.6,-58.4],
-  [-15.8,-47.9],[-22.9,-43.2],[-19.9,-43.9],[-30.0,-51.2],[6.2,-75.6],[-33.4,-70.6],
-  [51.5,-0.1],[48.8,2.3],[52.5,13.4],[40.4,-3.7],[41.9,12.5],[55.7,37.6],[59.3,18.1],
-  [52.4,4.9],[50.1,14.4],[48.2,16.4],[46.9,7.5],[47.5,19.0],[59.9,10.7],[60.2,24.9],
-  [64.1,-21.9],[55.0,23.0],[41.0,28.9],[38.7,-9.1],[37.0,-6.0],[43.3,5.4],[45.8,4.8],
-  [28.6,77.2],[19.0,72.8],[13.0,80.3],[22.6,88.4],[24.9,67.0],[23.8,90.4],[17.4,78.5],
-  [39.9,116.4],[31.2,121.5],[23.1,113.3],[22.5,114.1],[30.6,104.1],[29.6,106.5],
-  [35.7,139.7],[37.5,127.0],[34.7,135.5],[14.6,121.0],[3.1,101.7],[1.3,103.8],[-6.2,106.8],
-  [13.8,100.5],[16.8,96.2],[21.0,105.8],[25.0,55.3],[25.3,51.5],[31.8,35.2],[41.0,29.0],
-  [35.7,51.4],[24.5,54.4],[15.6,32.5],[33.3,44.4],[23.0,72.6],[27.7,85.3],[34.5,69.2],
-  [30.0,31.2],[6.5,3.4],[-1.3,36.8],[-26.2,28.0],[-33.9,151.2],[5.5,7.4],[-4.0,39.7],
-  [9.0,38.7],[14.7,-17.4],[36.8,10.2],[34.0,-6.8],[-15.8,35.0],[-11.7,43.3],[8.5,11.6],
-  [-33.9,151.2],[-37.8,144.9],[-27.5,153.0],[-31.9,115.9],[-36.8,174.8],
+  [40.7,-74.0],[34.0,-118.2],[41.9,-87.6],[29.7,-95.4],[33.0,-96.7],[37.8,-122.3],[25.8,-80.2],[39.0,-77.0],[42.4,-71.1],[36.2,-115.1],[32.8,-117.2],
+  [19.4,-99.1],[20.7,-103.3],[13.7,-89.2],[14.6,-90.5],[9.0,-79.5],[4.7,-74.1],[10.5,-66.9],[-12.0,-77.0],[-23.5,-46.6],[-34.6,-58.4],[-15.8,-47.9],[-22.9,-43.2],[-30.0,-51.2],[6.2,-75.6],[-33.4,-70.6],
+  [51.5,-0.1],[48.8,2.3],[52.5,13.4],[40.4,-3.7],[41.9,12.5],[55.7,37.6],[59.3,18.1],[52.4,4.9],[50.1,14.4],[48.2,16.4],[46.9,7.5],[47.5,19.0],[59.9,10.7],[60.2,24.9],[64.1,-21.9],[55.0,23.0],[41.0,28.9],[38.7,-9.1],[37.0,-6.0],[43.3,5.4],[45.8,4.8],
+  [28.6,77.2],[19.0,72.8],[13.0,80.3],[22.6,88.4],[24.9,67.0],[23.8,90.4],[17.4,78.5],[39.9,116.4],[31.2,121.5],[23.1,113.3],[22.5,114.1],[30.6,104.1],[29.6,106.5],[35.7,139.7],[37.5,127.0],[34.7,135.5],[14.6,121.0],[3.1,101.7],[1.3,103.8],[-6.2,106.8],[13.8,100.5],[16.8,96.2],[21.0,105.8],[25.0,55.3],[25.3,51.5],[31.8,35.2],[41.0,29.0],[35.7,51.4],[24.5,54.4],[15.6,32.5],[33.3,44.4],[23.0,72.6],[27.7,85.3],[34.5,69.2],
+  [30.0,31.2],[6.5,3.4],[-1.3,36.8],[-26.2,28.0],[5.5,7.4],[-4.0,39.7],[9.0,38.7],[14.7,-17.4],[36.8,10.2],[34.0,-6.8],[-15.8,35.0],[-11.7,43.3],[8.5,11.6],
+  [-33.9,151.2],[-37.8,144.9],[-27.5,153.0],[-31.9,115.9],[-36.8,174.8]
 ];
 
 function uvFromLatLon(lat, lon, w, h) {
-  // Normalizar longitud a [-180, 180] para evitar saltos en el antimeridiano
   lon = ((lon + 180) % 360 + 360) % 360 - 180;
   return [(lon + 180) / 360 * w, (90 - lat) / 180 * h];
 }
 
-/* ─── Textura diurna (mejorada con biomas realistas y costas orgánicas) ── */
+/* ─── DIBUJO DE POLÍGONOS ORGÁNICOS (Costas fractales) ─────────────── */
+function drawOrganicPoly(pts, ctx, w, h, fillStyle, isIce = false) {
+  if (pts.length < 3) return;
+  ctx.beginPath();
+  
+  let detailedPts = [];
+  for (let i = 0; i < pts.length; i++) {
+    const p1 = pts[i];
+    const p2 = pts[(i + 1) % pts.length];
+    
+    let lonDiff = p2[1] - p1[1];
+    if (lonDiff > 180) lonDiff -= 360;
+    if (lonDiff < -180) lonDiff += 360;
+    
+    const steps = 8; // Alta definición de costa
+    for (let s = 0; s < steps; s++) {
+      const t = s / steps;
+      let lat = p1[0] + (p2[0] - p1[0]) * t;
+      let lon = p1[1] + lonDiff * t;
+      
+      // Ruido fractal multi-octava para costas realistas
+      const n1 = terrainNoise(lon * 0.8, lat * 0.8);
+      const n2 = terrainNoise(lon * 2.5, lat * 2.5);
+      const n3 = terrainNoise(lon * 6.0, lat * 6.0);
+      
+      const jitter = (n1 * 0.5 + n2 * 0.3 + n3 * 0.2 - 0.5);
+      const jitterAmount = isIce ? 0.6 : 1.2; // Los ice shelves son más suaves
+      
+      detailedPts.push([lat + jitter * jitterAmount, lon + jitter * jitterAmount * 1.5]);
+    }
+  }
+  
+  if (detailedPts.length > 0) {
+    const start = uvFromLatLon(detailedPts[0][0], detailedPts[0][1], w, h);
+    ctx.moveTo(start[0], start[1]);
+    
+    for (let i = 0; i < detailedPts.length; i++) {
+      const curr = uvFromLatLon(detailedPts[i][0], detailedPts[i][1], w, h);
+      const next = uvFromLatLon(detailedPts[(i + 1) % detailedPts.length][0], detailedPts[(i + 1) % detailedPts.length][1], w, h);
+      const cpX = (curr[0] + next[0]) / 2;
+      const cpY = (curr[1] + next[1]) / 2;
+      ctx.quadraticCurveTo(curr[0], curr[1], cpX, cpY);
+    }
+    ctx.closePath();
+  }
+  ctx.fillStyle = fillStyle;
+  ctx.fill();
+}
+
+/* ─── Textura diurna (Biomas, Montañas reales, Hielo 3D) ───────────── */
 function buildDayCanvas(w, h) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
   const ctx = c.getContext('2d');
 
+  // Océano con profundidad
   const ocean = ctx.createLinearGradient(0, 0, 0, h);
   ocean.addColorStop(0.00, '#7ac3d8'); ocean.addColorStop(0.06, '#3a87a8');
   ocean.addColorStop(0.12, '#1e5e80'); ocean.addColorStop(0.30, '#0d3a5c');
@@ -221,42 +264,10 @@ function buildDayCanvas(w, h) {
   land.addColorStop(0.74, '#5b8c5a'); land.addColorStop(0.82, '#7a8b6f');
   land.addColorStop(0.90, '#d4dde0'); land.addColorStop(1.00, '#f8fafc');
 
-  // FUNCIÓN MEJORADA: Dibuja polígonos con costas orgánicas e irregulares
-  function drawOrganicPoly(pts) {
-    if (pts.length < 2) return;
-    ctx.beginPath();
-    for (let i = 0; i < pts.length; i++) {
-      const p = pts[i];
-      const nextP = pts[(i + 1) % pts.length];
-      
-      // Calcular diferencia de longitud manejando el cruce del antimeridiano
-      let lonDiff = nextP[1] - p[1];
-      if (lonDiff > 180) lonDiff -= 360;
-      if (lonDiff < -180) lonDiff += 360;
-      
-      const steps = 4;
-      for (let s = 0; s < steps; s++) {
-        const t = s / steps;
-        const lat = p[0] + (nextP[0] - p[0]) * t;
-        let lon = p[1] + lonDiff * t;
-        
-        // Ruido procedural para hacer las costas naturales y no rectas
-        const n = terrainNoise(lon * 0.2, lat * 0.2);
-        const jitter = (n - 0.5) * 1.5;
-        
-        const [u, v] = uvFromLatLon(lat + jitter, lon + jitter, w, h);
-        if (i === 0 && s === 0) ctx.moveTo(u, v);
-        else ctx.lineTo(u, v);
-      }
-    }
-    ctx.closePath();
-    ctx.fillStyle = land;
-    ctx.fill();
-  }
+  // Dibujar continentes con costas orgánicas
+  CONTINENTS.forEach(c2 => drawOrganicPoly(c2.pts, ctx, w, h, land));
 
-  CONTINENTS.forEach(c2 => drawOrganicPoly(c2.pts));
-
-  // Dibujar islas con formas orgánicas (CORREGIDO: ctx.restore() ahora va después de fill)
+  // Dibujar islas con formas orgánicas
   ISLANDS.forEach(([lat, lon, rLat, rLon, rot]) => {
     const [cu, cv] = uvFromLatLon(lat, lon, w, h);
     ctx.save();
@@ -269,17 +280,43 @@ function buildDayCanvas(w, h) {
       const angle = (i / steps) * Math.PI * 2;
       const n = terrainNoise(Math.cos(angle) * 3.0 + lon, Math.sin(angle) * 3.0 + lat);
       const r = 1.0 + (n - 0.5) * 0.5;
-      const x = Math.cos(angle) * r;
-      const y = Math.sin(angle) * r;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+      const x = Math.cos(angle) * r, y = Math.sin(angle) * r;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     }
     ctx.closePath();
     ctx.fillStyle = land;
     ctx.fill();
-    ctx.restore(); // ← MOVIDO AQUÍ para que aplique la transformación al dibujar
+    ctx.restore();
   });
 
+  // ─── CASQUETES POLARES 3D (Antártida y Groenlandia) ──────────────
+  const antarcticaPts = [[-62,-180],[-65,-150],[-68,-120],[-70,-80],[-72,-75],[-70,-65],[-65,-60],[-62,-55],[-60,-30],[-64,0],[-66,40],[-64,80],[-62,120],[-60,160],[-60,180],[-88,180],[-88,-180]];
+  drawOrganicPoly(antarcticaPts, ctx, w, h, '#ffffff', true);
+  ctx.save();
+  drawOrganicPoly(antarcticaPts, ctx, w, h, '#ffffff', true);
+  ctx.clip();
+  const iceGrad = ctx.createRadialGradient(w * 0.5, h * 0.95, 0, w * 0.5, h * 0.95, w * 0.6);
+  iceGrad.addColorStop(0, 'rgba(255,255,255,0.0)');
+  iceGrad.addColorStop(0.6, 'rgba(200,220,240,0.3)');
+  iceGrad.addColorStop(1, 'rgba(150,180,210,0.6)');
+  ctx.fillStyle = iceGrad;
+  ctx.fillRect(0, 0, w, h);
+  ctx.restore();
+
+  const greenlandPts = [[83,-38],[80,-20],[75,-18],[68,-25],[60,-42],[63,-52],[72,-65],[80,-62],[83,-38]];
+  drawOrganicPoly(greenlandPts, ctx, w, h, '#ffffff', true);
+  ctx.save();
+  drawOrganicPoly(greenlandPts, ctx, w, h, '#ffffff', true);
+  ctx.clip();
+  const greenlandGrad = ctx.createRadialGradient(w * 0.25, h * 0.15, 0, w * 0.25, h * 0.15, w * 0.15);
+  greenlandGrad.addColorStop(0, 'rgba(255,255,255,0.0)');
+  greenlandGrad.addColorStop(0.5, 'rgba(200,220,240,0.3)');
+  greenlandGrad.addColorStop(1, 'rgba(150,180,210,0.5)');
+  ctx.fillStyle = greenlandGrad;
+  ctx.fillRect(0, 0, w, h);
+  ctx.restore();
+
+  // ─── PROCESAMIENTO DE PÍXELES: Montañas reales y relieve ─────────
   const imgData = ctx.getImageData(0, 0, w, h);
   const data = imgData.data;
   const mountainNoise = makeNoise2D(333, 128);
@@ -287,55 +324,60 @@ function buildDayCanvas(w, h) {
 
   for (let y = 0; y < h; y++) {
     const lat = 90 - (y / h) * 180;
-    const latFactor = Math.cos(lat * Math.PI / 180);
     for (let x = 0; x < w; x++) {
+      const lon = -180 + (x / w) * 360;
       const idx = (y * w + x) * 4;
       const r = data[idx], g = data[idx + 1], b = data[idx + 2];
       const isLand = g > b + 3;
+      
       if (isLand) {
+        // Detección de cordilleras reales por coordenadas
+        let isMountainRange = false;
+        if (lon > -78 && lon < -65 && lat > -55 && lat < 15) isMountainRange = true; // Andes
+        if (lon > -125 && lon < -100 && lat > 30 && lat < 60) isMountainRange = true; // Rocosas
+        if (lon > 70 && lon < 100 && lat > 25 && lat < 45) isMountainRange = true; // Himalaya / Tíbet
+        if (lon > 5 && lon < 18 && lat > 43 && lat < 48) isMountainRange = true; // Alpes
+        if (lon > 5 && lon < 20 && lat > 55 && lat < 70) isMountainRange = true; // Escandinavia
+        if (lon > 25 && lon < 40 && lat > -10 && lat < 15) isMountainRange = true; // Este de África
+
         const u = x / w * 14, v = y / h * 14;
-        const n = terrainNoise(u, v);
+        let m = mountainNoise(x / w * 10, y / h * 10);
+        if (isMountainRange) m = m * 1.6 + 0.15; // Potenciar montañas en estas zonas
+        
         const detail = detailNoise(x / w * 50, y / h * 50);
-        const m = mountainNoise(x / w * 10, y / h * 10);
+        const latFactor = Math.cos(lat * Math.PI / 180);
 
         if (m > 0.55) {
           const mh = (m - 0.55) / 0.45;
           const snowLine = latFactor > 0.5 ? 0.45 : 0.65;
           if (mh > snowLine && Math.abs(lat) > 25) {
             const sf = (mh - snowLine) / (1 - snowLine);
-            data[idx] = Math.min(255, r * (0.7 + n * 0.3) * (1 - sf) + 250 * sf);
-            data[idx + 1] = Math.min(255, g * (0.7 + n * 0.3) * (1 - sf) + 250 * sf);
-            data[idx + 2] = Math.min(255, b * (0.7 + n * 0.3) * (1 - sf) + 255 * sf);
+            data[idx] = Math.min(255, r * (0.7 + detail * 0.3) * (1 - sf) + 250 * sf);
+            data[idx + 1] = Math.min(255, g * (0.7 + detail * 0.3) * (1 - sf) + 250 * sf);
+            data[idx + 2] = Math.min(255, b * (0.7 + detail * 0.3) * (1 - sf) + 255 * sf);
           } else {
             const mf = 0.6 + mh * 0.5;
-            data[idx] = Math.min(255, r * mf + mh * 25);
+            data[idx] = Math.min(255, r * mf + mh * 35);
             data[idx + 1] = Math.min(255, g * mf * 0.92);
             data[idx + 2] = Math.min(255, b * mf * 0.8);
           }
         } else {
-          const f = 0.72 + n * 0.45 + detail * 0.12;
+          const f = 0.72 + detail * 0.45 + detailNoise(x / w * 30, y / h * 30) * 0.12;
           data[idx] = Math.min(255, r * f);
           data[idx + 1] = Math.min(255, g * f);
           data[idx + 2] = Math.min(255, b * f);
         }
+
+        // Costa: playa arenosa
         if (b + 8 > g || (g > b && g - b < 6 && r > 100)) {
-          data[idx] = Math.min(255, 210 + n * 30);
-          data[idx + 1] = Math.min(255, 195 + n * 30);
-          data[idx + 2] = Math.min(255, 160 + n * 30);
+          data[idx] = Math.min(255, 210 + detail * 30);
+          data[idx + 1] = Math.min(255, 195 + detail * 30);
+          data[idx + 2] = Math.min(255, 160 + detail * 30);
         }
       }
     }
   }
   ctx.putImageData(imgData, 0, 0);
-
-  const ice = ctx.createLinearGradient(0, 0, 0, h);
-  ice.addColorStop(0.00, 'rgba(255,255,255,0.97)'); ice.addColorStop(0.04, 'rgba(235,245,255,0.75)');
-  ice.addColorStop(0.08, 'rgba(210,230,245,0.35)'); ice.addColorStop(0.11, 'rgba(200,225,240,0.0)');
-  ice.addColorStop(0.89, 'rgba(200,225,240,0.0)'); ice.addColorStop(0.92, 'rgba(210,230,245,0.35)');
-  ice.addColorStop(0.96, 'rgba(235,245,255,0.75)'); ice.addColorStop(1.00, 'rgba(255,255,255,0.97)');
-  ctx.fillStyle = ice;
-  ctx.fillRect(0, 0, w, h);
-
   return c;
 }
 
@@ -347,15 +389,16 @@ function buildNightCanvas(w, h) {
   ctx.fillRect(0, 0, w, h);
   const rand = mulberry32(777);
 
-  for (let i = 0; i < 300; i++) {
+  for (let i = 0; i < 400; i++) {
     const u = rand() * w, v = rand() * h;
-    ctx.fillStyle = `rgba(80,70,40,${rand() * 0.15})`;
+    ctx.fillStyle = `rgba(80,70,40,${rand() * 0.12})`;
     ctx.beginPath(); ctx.arc(u, v, 1 + rand() * 2, 0, Math.PI * 2); ctx.fill();
   }
 
   CITIES.forEach(([lat, lon]) => {
     const [u, v] = uvFromLatLon(lat, lon, w, h);
     const intensity = 0.6 + rand() * 0.4;
+    
     const g3 = ctx.createRadialGradient(u, v, 0, u, v, 25);
     g3.addColorStop(0, `rgba(255,200,100,${0.15 * intensity})`); g3.addColorStop(1, 'rgba(255,200,100,0)');
     ctx.fillStyle = g3; ctx.beginPath(); ctx.arc(u, v, 25, 0, Math.PI * 2); ctx.fill();
@@ -493,7 +536,6 @@ void main() {
   vec3 dayColor = texture2D(uDayTex, vUV).rgb;
   vec3 nightColor = texture2D(uNightTex, vUV).rgb;
 
-  // Nubes que rotan con la tierra + desplazamiento independiente lento
   float earthRotFraction = uEarthRot / 6.2831853;
   vec2 cloudUV = vec2(fract(vUV.x + earthRotFraction + uTime * 0.005), vUV.y);
   vec2 cloudUV2 = vec2(fract(vUV.x + earthRotFraction - uTime * 0.003), vUV.y + 0.005);
@@ -627,7 +669,7 @@ if (!gl) {
     uSunDir: gl.getUniformLocation(program, 'uSunDir'),
     uViewPos: gl.getUniformLocation(program, 'uViewPos'),
     uTime: gl.getUniformLocation(program, 'uTime'),
-    uEarthRot: gl.getUniformLocation(program, 'uEarthRot'), // ← NUEVO: Para sincronizar nubes con rotación
+    uEarthRot: gl.getUniformLocation(program, 'uEarthRot'),
     uDayTex: gl.getUniformLocation(program, 'uDayTex'),
     uNightTex: gl.getUniformLocation(program, 'uNightTex'),
     uCloudTex: gl.getUniformLocation(program, 'uCloudTex')
@@ -727,7 +769,6 @@ if (!gl) {
 
   function frame(now) {
     const date = new Date();
-    // Aplicamos el multiplicador de velocidad para que sea visible
     const simulatedSeconds = (date.getUTCHours() * 3600 + date.getUTCMinutes() * 60 + date.getUTCSeconds() + date.getUTCMilliseconds() / 1000) * ROTATION_SPEED;
     const earthRotationAngle = (simulatedSeconds / 86400) * Math.PI * 2;
 
@@ -767,7 +808,7 @@ if (!gl) {
     gl.uniform3fv(locs.uSunDir, sunDir);
     gl.uniform3fv(locs.uViewPos, [0, 0, camDist]);
     gl.uniform1f(locs.uTime, now * 0.001);
-    gl.uniform1f(locs.uEarthRot, earthRotationAngle); // ← NUEVO: Sincroniza nubes con la rotación
+    gl.uniform1f(locs.uEarthRot, earthRotationAngle);
 
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, dayTex); gl.uniform1i(locs.uDayTex, 0);
     gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, nightTex); gl.uniform1i(locs.uNightTex, 1);
